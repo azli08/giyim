@@ -1,4 +1,90 @@
-document.addEventListener("DOMContentLoaded", () => {
+const apiBaseUrl = (window.MODA_API_URL || "http://localhost:3000/api").replace(/\/$/, "");
+
+const createProductCard = (product) => {
+  const card = document.createElement("article");
+  card.className = "product-card";
+  card.dataset.productId = product.id;
+
+  const variants = Array.isArray(product.variants) ? product.variants : [];
+  const availablePrices = variants.map((variant) => Number(variant.price)).filter(Number.isFinite);
+  card.dataset.price = String(availablePrices.length ? Math.min(...availablePrices) : 0);
+
+  const image = document.createElement("img");
+  image.src = product.image?.url || "./images/children.jpg";
+  image.alt = product.image?.alt || product.name;
+  image.loading = "lazy";
+
+  const info = document.createElement("div");
+  info.className = "product-info";
+  const category = document.createElement("p");
+  category.className = "product-category";
+  category.textContent = product.category || "MODA";
+  const title = document.createElement("h3");
+  title.textContent = product.name;
+  const price = document.createElement("p");
+  price.className = "product-price";
+  price.textContent = availablePrices.length
+    ? new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" }).format(Math.min(...availablePrices))
+    : "Stokta yok";
+  const sizeLabel = document.createElement("p");
+  sizeLabel.className = "size-label";
+  sizeLabel.textContent = "Beden (yaş)";
+  const sizeList = document.createElement("ul");
+  sizeList.className = "size-list";
+  sizeList.setAttribute("aria-label", "Beden seçin");
+
+  variants.forEach((variant) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = variant.size;
+    button.dataset.variantId = variant.id;
+    button.dataset.price = variant.price;
+    button.dataset.stock = variant.stockQuantity;
+    button.setAttribute("aria-pressed", "false");
+    button.disabled = Number(variant.stockQuantity) <= 0;
+    if (button.disabled) button.setAttribute("aria-label", `${variant.size} yaş bedeni stokta yok`);
+    item.append(button);
+    sizeList.append(item);
+  });
+
+  const addButton = document.createElement("button");
+  addButton.className = "add-to-cart";
+  addButton.type = "button";
+  addButton.textContent = "Sepete Ekle";
+
+  info.append(category, title, price, sizeLabel, sizeList, addButton);
+  card.append(image, info);
+  return card;
+};
+
+const loadCatalog = async () => {
+  const category = document.body.dataset.catalogCategory || "all";
+  const url = category === "all"
+    ? `${apiBaseUrl}/products`
+    : `${apiBaseUrl}/products?category=${encodeURIComponent(category)}`;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 2500);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`Katalog isteği başarısız: ${response.status}`);
+    const products = await response.json();
+    if (!Array.isArray(products) || products.length === 0) return;
+
+    const grid = document.querySelector(".product-grid");
+    if (!grid) return;
+    const shownProducts = category === "all" ? products.slice(0, 3) : products;
+    grid.replaceChildren(...shownProducts.map(createProductCard));
+  } catch (error) {
+    console.info("Backend kataloğu kullanılamadı; sayfadaki örnek ürünler gösteriliyor.", error);
+  } finally {
+    window.clearTimeout(timeout);
+  }
+};
+
+document.addEventListener("DOMContentLoaded", async () => {
+  await loadCatalog();
   const navLinks = document.querySelectorAll(".site-header nav .nav-link");
   const currentFile = window.location.pathname.split("/").pop() || "index.html";
 
@@ -423,7 +509,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  document.querySelectorAll(".add-to-cart").forEach((addButton) => {
+  document.querySelectorAll(".product-card .add-to-cart").forEach((addButton) => {
     addButton.addEventListener("click", () => {
       const card = addButton.closest(".product-card");
       const selectedSize = card.querySelector('.size-list button[aria-pressed="true"]');
@@ -435,9 +521,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       cart.push({
         id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        variantId: selectedSize.dataset.variantId || null,
         name: card.querySelector("h3").textContent,
         size: selectedSize.textContent.trim(),
-        price: Number(card.dataset.price),
+        price: Number(selectedSize.dataset.price || card.dataset.price),
       });
       saveCart();
       renderCart();

@@ -3,6 +3,26 @@ const pool = require("./db");
 
 const app = express();
 
+const allowedOrigins = new Set(
+  (process.env.FRONTEND_ORIGIN || "http://localhost:5500,http://127.0.0.1:5500")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+);
+
+app.use((request, response, next) => {
+  const origin = request.get("Origin");
+  if (origin && allowedOrigins.has(origin)) {
+    response.set("Access-Control-Allow-Origin", origin);
+    response.set("Vary", "Origin");
+    response.set("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
+    response.set("Access-Control-Allow-Headers", "Content-Type");
+  }
+
+  if (request.method === "OPTIONS") return response.sendStatus(204);
+  next();
+});
+
 app.use(express.json());
 
 app.get("/api/health", (request, response) => {
@@ -12,10 +32,30 @@ app.get("/api/health", (request, response) => {
 app.get("/api/products", async (request, response) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, slug, description
-       FROM products
-       WHERE is_active = TRUE
-       ORDER BY name`
+      `SELECT p.id, p.name, p.slug, p.description,
+              c.name AS category, c.slug AS category_slug,
+              COALESCE((
+                SELECT jsonb_agg(jsonb_build_object(
+                  'id', v.id, 'sku', v.sku, 'size', v.size,
+                  'color', v.color, 'price', v.price,
+                  'stockQuantity', v.stock_quantity
+                ) ORDER BY v.size)
+                FROM product_variants v
+                WHERE v.product_id = p.id AND v.is_active = TRUE
+              ), '[]'::jsonb) AS variants,
+              COALESCE((
+                SELECT jsonb_build_object('url', pi.image_url, 'alt', pi.alt_text)
+                FROM product_images pi
+                WHERE pi.product_id = p.id
+                ORDER BY pi.sort_order, pi.id
+                LIMIT 1
+              ), jsonb_build_object('url', NULL, 'alt', '')) AS image
+       FROM products p
+       LEFT JOIN categories c ON c.id = p.category_id
+       WHERE p.is_active = TRUE
+         AND ($1::text IS NULL OR c.slug = $1)
+       ORDER BY p.name`,
+      [typeof request.query.category === "string" ? request.query.category : null]
     );
 
     response.json(result.rows);
