@@ -1,7 +1,17 @@
 const express = require("express");
+const {
+  createHash,
+  randomBytes,
+  scrypt: scryptCallback,
+  timingSafeEqual,
+} = require("node:crypto");
+const { promisify } = require("node:util");
 const pool = require("./db");
 
 const app = express();
+const scrypt = promisify(scryptCallback);
+const sessionCookieName = "moda_session";
+const sessionDurationMs = 7 * 24 * 60 * 60 * 1000;
 
 const allowedOrigins = new Set(
   (process.env.FRONTEND_ORIGIN || "http://localhost:5500,http://127.0.0.1:5500")
@@ -17,13 +27,227 @@ app.use((request, response, next) => {
     response.set("Vary", "Origin");
     response.set("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
     response.set("Access-Control-Allow-Headers", "Content-Type");
+    response.set("Access-Control-Allow-Credentials", "true");
   }
 
   if (request.method === "OPTIONS") return response.sendStatus(204);
+
+  const changesData = ["POST", "PUT", "PATCH", "DELETE"].includes(request.method);
+  if (changesData && origin && !allowedOrigins.has(origin)) {
+    return response.status(403).json({ error: "Bu kaynağa izin verilmiyor." });
+  }
+
   next();
 });
 
 app.use(express.json());
+
+const hashSessionToken = (token) =>
+  createHash("sha256").update(token).digest("hex");
+
+const readSessionToken = (request) => {
+  const cookie = request.headers.cookie
+    ?.split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${sessionCookieName}=`));
+
+  return cookie ? cookie.slice(sessionCookieName.length + 1) : null;
+};
+
+const setSessionCookie = (response, token) => {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  response.set(
+    "Set-Cookie",
+    `${sessionCookieName}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(sessionDurationMs / 1000)}${secure}`
+  );
+};
+
+const clearSessionCookie = (response) => {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  response.set(
+    "Set-Cookie",
+    `${sessionCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`
+  );
+};
+
+const hashPassword = async (password) => {
+  const salt = randomBytes(16);
+  const derivedKey = await scrypt(password, salt, 64);
+  return `scrypt$${salt.toString("hex")}$${derivedKey.toString("hex")}`;
+};
+
+const verifyPassword = async (password, storedHash) => {
+  const [algorithm, saltHex, keyHex] = storedHash.split("$");
+  if (algorithm !== "scrypt" || !saltHex || !keyHex) return false;
+
+  const expectedKey = Buffer.from(keyHex, "hex");
+  const actualKey = await scrypt(password, Buffer.from(saltHex, "hex"), expectedKey.length);
+  return actualKey.length === expectedKey.length && timingSafeEqual(actualKey, expectedKey);
+};
+
+const publicUser = (user) => ({
+  id: user.id,
+  email: user.email,
+  firstName: user.first_name,
+  lastName: user.last_name,
+});
+
+const createUserSession = async (database, userId) => {
+  const token = randomBytes(32).toString("base64url");
+  const tokenHash = hashSessionToken(token);
+  const expiresAt = new Date(Date.now() + sessionDurationMs);
+
+  await database.query(
+    `INSERT INTO user_sessions (token_hash, user_id, expires_at)
+     VALUES ($1, $2, $3)`,
+    [tokenHash, userId, expiresAt]
+  );
+
+  return token;
+};
+
+const requireAuth = async (request, response, next) => {
+  const token = readSessionToken(request);
+  if (!token || !/^[A-Za-z0-9_-]{40,50}$/.test(token)) {
+    return response.status(401).json({ error: "Oturum açmalısınız." });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT u.id, u.email, u.first_name, u.last_name, s.token_hash
+       FROM user_sessions s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.token_hash = $1 AND s.expires_at > NOW()`,
+      [hashSessionToken(token)]
+    );
+
+    if (result.rows.length === 0) {
+      clearSessionCookie(response);
+      return response.status(401).json({ error: "Oturum süresi dolmuş. Tekrar giriş yapın." });
+    }
+
+    request.auth = {
+      user: result.rows[0],
+      sessionHash: result.rows[0].token_hash,
+    };
+    next();
+  } catch (error) {
+    console.error("Oturum doğrulama başarısız:", error);
+    response.status(500).json({ error: "Sunucu hatası" });
+  }
+};
+
+app.post("/api/auth/register", async (request, response) => {
+  const { email, password, firstName, lastName } = request.body ?? {};
+  const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+  const normalizedFirstName = typeof firstName === "string" ? firstName.trim() : "";
+  const normalizedLastName = typeof lastName === "string" ? lastName.trim() : "";
+
+  if (
+    normalizedEmail.length > 254 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) ||
+    typeof password !== "string" ||
+    password.length < 8 ||
+    password.length > 128 ||
+    !normalizedFirstName ||
+    normalizedFirstName.length > 80 ||
+    !normalizedLastName ||
+    normalizedLastName.length > 80
+  ) {
+    return response.status(400).json({
+      error: "Geçerli e-posta, 8-128 karakterli parola, ad ve soyad gerekli.",
+    });
+  }
+
+  let client;
+  try {
+    const passwordHash = await hashPassword(password);
+    client = await pool.connect();
+    await client.query("BEGIN");
+
+    const result = await client.query(
+      `INSERT INTO users (email, password_hash, first_name, last_name)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, email, first_name, last_name`,
+      [normalizedEmail, passwordHash, normalizedFirstName, normalizedLastName]
+    );
+    const user = result.rows[0];
+    const token = await createUserSession(client, user.id);
+    await client.query("DELETE FROM user_sessions WHERE expires_at <= NOW()");
+    await client.query("COMMIT");
+
+    setSessionCookie(response, token);
+    response.status(201).json({ user: publicUser(user) });
+  } catch (error) {
+    if (client) await client.query("ROLLBACK").catch(() => {});
+    if (error.code === "23505") {
+      return response.status(409).json({ error: "Bu e-posta adresi zaten kayıtlı." });
+    }
+
+    console.error("Kullanıcı kaydı başarısız:", error);
+    response.status(500).json({ error: "Sunucu hatası" });
+  } finally {
+    client?.release();
+  }
+});
+
+app.post("/api/auth/login", async (request, response) => {
+  const { email, password } = request.body ?? {};
+  const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+
+  if (
+    !normalizedEmail ||
+    normalizedEmail.length > 254 ||
+    typeof password !== "string" ||
+    password.length === 0 ||
+    password.length > 128
+  ) {
+    return response.status(400).json({ error: "E-posta ve parola gerekli." });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT id, email, password_hash, first_name, last_name
+       FROM users
+       WHERE email = $1`,
+      [normalizedEmail]
+    );
+    const user = result.rows[0];
+
+    if (!user || !(await verifyPassword(password, user.password_hash))) {
+      return response.status(401).json({ error: "E-posta veya parola hatalı." });
+    }
+
+    const token = await createUserSession(pool, user.id);
+    await pool.query("DELETE FROM user_sessions WHERE expires_at <= NOW()");
+    setSessionCookie(response, token);
+    response.json({ user: publicUser(user) });
+  } catch (error) {
+    console.error("Giriş başarısız:", error);
+    response.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
+app.get("/api/auth/me", requireAuth, (request, response) => {
+  response.json({ user: publicUser(request.auth.user) });
+});
+
+app.post("/api/auth/logout", async (request, response) => {
+  const token = readSessionToken(request);
+  if (token && /^[A-Za-z0-9_-]{40,50}$/.test(token)) {
+    try {
+      await pool.query("DELETE FROM user_sessions WHERE token_hash = $1", [
+        hashSessionToken(token),
+      ]);
+    } catch (error) {
+      console.error("Oturum kapatılamadı:", error);
+      return response.status(500).json({ error: "Sunucu hatası" });
+    }
+  }
+
+  clearSessionCookie(response);
+  response.json({ message: "Oturum kapatıldı." });
+});
 
 app.get("/api/health", (request, response) => {
   response.json({ status: "ok" });
