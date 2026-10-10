@@ -137,6 +137,62 @@ const requireAuth = async (request, response, next) => {
   }
 };
 
+const getOrCreateCartId = async (database, userId) => {
+  await database.query(
+    `INSERT INTO carts (user_id)
+     VALUES ($1)
+     ON CONFLICT (user_id) DO NOTHING`,
+    [userId]
+  );
+  const result = await database.query(
+    "SELECT id FROM carts WHERE user_id = $1",
+    [userId]
+  );
+  return result.rows[0].id;
+};
+
+const readCart = async (database, cartId) => {
+  const [itemsResult, totalResult] = await Promise.all([
+    database.query(
+      `SELECT ci.id, v.id AS variant_id, v.sku, v.size, v.color,
+              p.name, ci.quantity, v.price AS unit_price,
+              v.stock_quantity,
+              (v.price * ci.quantity)::numeric AS line_total
+       FROM cart_items ci
+       JOIN product_variants v ON v.id = ci.variant_id
+       JOIN products p ON p.id = v.product_id
+       WHERE ci.cart_id = $1
+       ORDER BY ci.created_at, ci.id`,
+      [cartId]
+    ),
+    database.query(
+      `SELECT COALESCE(SUM(v.price * ci.quantity), 0)::numeric AS total,
+              COALESCE(SUM(ci.quantity), 0)::integer AS item_count
+       FROM cart_items ci
+       JOIN product_variants v ON v.id = ci.variant_id
+       WHERE ci.cart_id = $1`,
+      [cartId]
+    ),
+  ]);
+
+  return {
+    items: itemsResult.rows.map((item) => ({
+      id: item.id,
+      variantId: item.variant_id,
+      sku: item.sku,
+      name: item.name,
+      size: item.size,
+      color: item.color,
+      quantity: item.quantity,
+      unitPrice: item.unit_price,
+      stockQuantity: item.stock_quantity,
+      lineTotal: item.line_total,
+    })),
+    itemCount: totalResult.rows[0].item_count,
+    total: totalResult.rows[0].total,
+  };
+};
+
 app.post("/api/auth/register", async (request, response) => {
   const { email, password, firstName, lastName } = request.body ?? {};
   const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
@@ -251,6 +307,180 @@ app.post("/api/auth/logout", async (request, response) => {
 
 app.get("/api/health", (request, response) => {
   response.json({ status: "ok" });
+});
+
+app.get("/api/cart", requireAuth, async (request, response) => {
+  try {
+    const cartId = await getOrCreateCartId(pool, request.auth.user.id);
+    response.json(await readCart(pool, cartId));
+  } catch (error) {
+    console.error("Sepet okunamadı:", error);
+    response.status(500).json({ error: "Sepet yüklenemedi." });
+  }
+});
+
+app.post("/api/cart/items", requireAuth, async (request, response) => {
+  const { variantId, quantity = 1 } = request.body ?? {};
+  const normalizedVariantId = String(variantId ?? "");
+
+  if (
+    !/^[1-9]\d*$/.test(normalizedVariantId) ||
+    !Number.isSafeInteger(quantity) ||
+    quantity < 1 ||
+    quantity > 99
+  ) {
+    return response.status(400).json({
+      error: "Geçerli bir variantId ve 1-99 arasında quantity gerekli.",
+    });
+  }
+
+  const client = await pool.connect();
+  let transactionStarted = false;
+  try {
+    await client.query("BEGIN");
+    transactionStarted = true;
+    const cartId = await getOrCreateCartId(client, request.auth.user.id);
+
+    // Varyant satırını kilitleyerek eşzamanlı eklemelerde stok kontrolünü tutarlı yap.
+    const variantResult = await client.query(
+      `SELECT v.id, v.stock_quantity
+       FROM product_variants v
+       JOIN products p ON p.id = v.product_id
+       WHERE v.id = $1 AND v.is_active = TRUE AND p.is_active = TRUE
+       FOR UPDATE OF v`,
+      [normalizedVariantId]
+    );
+    if (variantResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+      return response.status(404).json({ error: "Ürün varyantı bulunamadı." });
+    }
+
+    const stockQuantity = variantResult.rows[0].stock_quantity;
+    const existingResult = await client.query(
+      `SELECT quantity FROM cart_items
+       WHERE cart_id = $1 AND variant_id = $2`,
+      [cartId, normalizedVariantId]
+    );
+    const existingQuantity = existingResult.rows[0]?.quantity ?? 0;
+    const nextQuantity = existingQuantity + quantity;
+
+    if (nextQuantity > 99) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+      return response.status(400).json({ error: "Bir üründen en fazla 99 adet eklenebilir." });
+    }
+    if (nextQuantity > stockQuantity) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+      return response.status(409).json({
+        error: "İstenen miktar stokta yok.",
+        availableQuantity: Math.max(0, stockQuantity - existingQuantity),
+      });
+    }
+
+    await client.query(
+      `INSERT INTO cart_items (cart_id, variant_id, quantity)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (cart_id, variant_id)
+       DO UPDATE SET quantity = cart_items.quantity + EXCLUDED.quantity`,
+      [cartId, normalizedVariantId, quantity]
+    );
+    await client.query("UPDATE carts SET updated_at = NOW() WHERE id = $1", [cartId]);
+    await client.query("COMMIT");
+    transactionStarted = false;
+
+    const cart = await readCart(pool, cartId);
+    response.status(existingQuantity === 0 ? 201 : 200).json(cart);
+  } catch (error) {
+    if (transactionStarted) await client.query("ROLLBACK").catch(() => {});
+    console.error("Sepete ürün eklenemedi:", error);
+    response.status(500).json({ error: "Sepete ürün eklenemedi." });
+  } finally {
+    client.release();
+  }
+});
+
+app.patch("/api/cart/items/:itemId", requireAuth, async (request, response) => {
+  const itemId = request.params.itemId;
+  const { quantity } = request.body ?? {};
+
+  if (!/^[1-9]\d*$/.test(itemId) || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 99) {
+    return response.status(400).json({
+      error: "Geçerli bir itemId ve 1-99 arasında quantity gerekli.",
+    });
+  }
+
+  const client = await pool.connect();
+  let transactionStarted = false;
+  try {
+    await client.query("BEGIN");
+    transactionStarted = true;
+    const itemResult = await client.query(
+      `SELECT ci.id, ci.cart_id, v.stock_quantity
+       FROM cart_items ci
+       JOIN carts c ON c.id = ci.cart_id
+       JOIN product_variants v ON v.id = ci.variant_id
+       WHERE ci.id = $1 AND c.user_id = $2
+       FOR UPDATE OF ci, v`,
+      [itemId, request.auth.user.id]
+    );
+    if (itemResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+      return response.status(404).json({ error: "Sepet ürünü bulunamadı." });
+    }
+
+    const item = itemResult.rows[0];
+    if (quantity > item.stock_quantity) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+      return response.status(409).json({
+        error: "İstenen miktar stokta yok.",
+        availableQuantity: item.stock_quantity,
+      });
+    }
+
+    await client.query("UPDATE cart_items SET quantity = $1 WHERE id = $2", [quantity, itemId]);
+    await client.query("UPDATE carts SET updated_at = NOW() WHERE id = $1", [item.cart_id]);
+    await client.query("COMMIT");
+    transactionStarted = false;
+
+    response.json(await readCart(pool, item.cart_id));
+  } catch (error) {
+    if (transactionStarted) await client.query("ROLLBACK").catch(() => {});
+    console.error("Sepet miktarı güncellenemedi:", error);
+    response.status(500).json({ error: "Sepet güncellenemedi." });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete("/api/cart/items/:itemId", requireAuth, async (request, response) => {
+  const itemId = request.params.itemId;
+  if (!/^[1-9]\d*$/.test(itemId)) {
+    return response.status(400).json({ error: "Geçerli bir sepet ürünü kimliği gerekli." });
+  }
+
+  try {
+    const deleted = await pool.query(
+      `DELETE FROM cart_items ci
+       USING carts c
+       WHERE ci.cart_id = c.id AND ci.id = $1 AND c.user_id = $2
+       RETURNING c.id AS cart_id`,
+      [itemId, request.auth.user.id]
+    );
+    if (deleted.rows.length === 0) {
+      return response.status(404).json({ error: "Sepet ürünü bulunamadı." });
+    }
+
+    const cartId = deleted.rows[0].cart_id;
+    await pool.query("UPDATE carts SET updated_at = NOW() WHERE id = $1", [cartId]);
+    response.json(await readCart(pool, cartId));
+  } catch (error) {
+    console.error("Sepet ürünü silinemedi:", error);
+    response.status(500).json({ error: "Sepet ürünü silinemedi." });
+  }
 });
 
 app.get("/api/products", async (request, response) => {
