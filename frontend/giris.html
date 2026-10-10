@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#fff8f5">
+  <title>Giriş Yap | MODA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body class="auth-page" data-auth-page="login">
+  <header class="auth-header">
+    <a class="brand" href="./index.html" aria-label="MODA ana sayfa"><i class="bi bi-bag-heart" aria-hidden="true">♥</i><span>MODA</span></a>
+    <a class="auth-back-link" href="./index.html">← Mağazaya dön</a>
+  </header>
+
+  <main class="auth-layout">
+    <section class="auth-visual auth-visual-login" aria-label="MODA çocuk giyim koleksiyonu">
+      <img src="./images/children.jpg" alt="Yeni sezon çocuk giyim koleksiyonundan dört çocuk">
+      <div class="auth-visual-shade"></div>
+      <div class="auth-visual-copy">
+        <span class="auth-photo-label">KÜÇÜK MUTLULUKLAR İÇİN</span>
+        <h1>Güzel günler,<br>güzel kombinlerle.</h1>
+        <p>Sevdiğin parçaları keşfetmeye kaldığın yerden devam et.</p>
+      </div>
+      <span class="auth-photo-caption">MODA · Çocuk giyim koleksiyonu</span>
+    </section>
+
+    <section class="auth-form-side" aria-labelledby="auth-title">
+      <div class="auth-card">
+        <p class="auth-eyebrow">TEKRAR HOŞ GELDİN</p>
+        <h2 id="auth-title">Hesabına giriş yap</h2>
+        <p class="auth-intro">Koleksiyonuna ve favorilerine kaldığın yerden devam et.</p>
+
+        <div class="auth-tabs" role="group" aria-label="Hesap işlemleri">
+          <a class="auth-tab is-active" href="./giris.html" aria-current="page">Giriş yap</a>
+          <a class="auth-tab" href="./kayit.html">Kayıt ol</a>
+        </div>
+
+        <form class="auth-form" id="login-form" novalidate>
+          <label class="auth-field">
+            <span>E-posta adresi</span>
+            <input name="email" type="email" autocomplete="email" placeholder="ornek@eposta.com" maxlength="254" required>
+          </label>
+          <label class="auth-field">
+            <span>Şifre</span>
+            <input name="password" type="password" autocomplete="current-password" placeholder="Şifreni gir" maxlength="128" required>
+          </label>
+          <button class="auth-submit" type="submit"><span class="auth-submit-label"><span aria-hidden="true">♡</span> Giriş yap</span><span class="auth-submit-arrow" aria-hidden="true">→</span></button>
+          <p class="auth-feedback" role="status" aria-live="polite"></p>
+        </form>
+
+        <p class="auth-footnote"><i aria-hidden="true">✓</i> Hesabın güvenli oturum çereziyle korunur.</p>
+      </div>
+      <p class="auth-bottom-note">Miniklere kocaman tarzlar <span aria-hidden="true">♥</span></p>
+    </section>
+  </main>
+  <script src="./auth.js"></script>
+</body>
+</html>
