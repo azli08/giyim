@@ -25,7 +25,7 @@ app.use((request, response, next) => {
   if (origin && allowedOrigins.has(origin)) {
     response.set("Access-Control-Allow-Origin", origin);
     response.set("Vary", "Origin");
-    response.set("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
+    response.set("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
     response.set("Access-Control-Allow-Headers", "Content-Type");
     response.set("Access-Control-Allow-Credentials", "true");
   }

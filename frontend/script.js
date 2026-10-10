@@ -452,48 +452,116 @@ document.addEventListener("DOMContentLoaded", async () => {
   const cartToast = document.querySelector(".cart-toast");
   const money = new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" });
 
-  let cart = [];
-  try {
-    cart = JSON.parse(localStorage.getItem("moda-cart") || "[]");
-    if (!Array.isArray(cart)) cart = [];
-  } catch {
-    cart = [];
-  }
+  let cart = { items: [], itemCount: 0, total: 0 };
+  let cartMutationPending = false;
 
-  const saveCart = () => {
+  const requestCart = async (path, options = {}) => {
+    const response = await fetch(`${apiBaseUrl}${path}`, {
+      ...options,
+      credentials: "include",
+      headers: options.body
+        ? { "Content-Type": "application/json", ...options.headers }
+        : options.headers,
+    });
+
+    let data = {};
     try {
-      localStorage.setItem("moda-cart", JSON.stringify(cart));
+      data = await response.json();
     } catch {
-      // Sepet yine bu sayfa açıkken çalışır; tarayıcı kaydı kapalı olabilir.
+      // Hatalı veya boş API yanıtı için aşağıda durum kodu gösterilir.
     }
+
+    if (!response.ok) {
+      const error = new Error(data.error || "Sepet işlemi tamamlanamadı.");
+      error.status = response.status;
+      throw error;
+    }
+
+    return data;
+  };
+
+  const handleCartError = (error) => {
+    if (error.status === 401) {
+      window.location.assign("./giris.html");
+      return;
+    }
+    if (error.status === 409) {
+      showToast(`Stok uyarısı: ${error.message}`);
+      return;
+    }
+    showToast(error.message || "Sepet sunucusuna ulaşılamadı.");
   };
 
   const renderCart = () => {
     cartItemsList.replaceChildren();
-    cart.forEach((item) => {
+    const items = Array.isArray(cart.items) ? cart.items : [];
+    items.forEach((item) => {
       const row = document.createElement("li");
       row.className = "cart-item";
 
       const label = document.createElement("span");
-      label.textContent = `${item.name} · ${item.size} yaş`;
+      label.className = "cart-item-label";
+      label.textContent = `${item.name} · ${item.size} yaş${item.color ? ` · ${item.color}` : ""}`;
       const price = document.createElement("span");
       price.className = "cart-item-price";
-      price.textContent = money.format(item.price);
+      price.textContent = money.format(Number(item.lineTotal));
+
+      const controls = document.createElement("div");
+      controls.className = "cart-item-controls";
+      const decrease = document.createElement("button");
+      decrease.className = "cart-quantity-button";
+      decrease.type = "button";
+      decrease.dataset.cartAction = "quantity";
+      decrease.dataset.itemId = item.id;
+      decrease.dataset.quantity = String(Number(item.quantity) - 1);
+      decrease.setAttribute("aria-label", `${item.name} miktarını azalt`);
+      decrease.textContent = "−";
+      decrease.disabled = Number(item.quantity) <= 1;
+      const quantity = document.createElement("span");
+      quantity.className = "cart-item-quantity";
+      quantity.textContent = String(item.quantity);
+      const increase = document.createElement("button");
+      increase.className = "cart-quantity-button";
+      increase.type = "button";
+      increase.dataset.cartAction = "quantity";
+      increase.dataset.itemId = item.id;
+      increase.dataset.quantity = String(Number(item.quantity) + 1);
+      increase.setAttribute("aria-label", `${item.name} miktarını artır`);
+      increase.textContent = "+";
+      increase.disabled = Number(item.quantity) >= 99 || Number(item.quantity) >= Number(item.stockQuantity);
       const remove = document.createElement("button");
       remove.className = "cart-remove";
       remove.type = "button";
-      remove.dataset.removeId = item.id;
-      remove.textContent = "Sepetten çıkar";
+      remove.dataset.cartAction = "remove";
+      remove.dataset.itemId = item.id;
+      remove.setAttribute("aria-label", `${item.name} ürününü sepetten sil`);
+      remove.textContent = "Kaldır";
 
-      row.append(label, price, remove);
+      controls.append(decrease, quantity, increase, remove);
+      row.append(label, price, controls);
       cartItemsList.append(row);
     });
 
-    cartCount.textContent = String(cart.length);
-    cartCount.setAttribute("aria-label", `Sepette ${cart.length} ürün var`);
-    cartTotal.textContent = money.format(cart.reduce((sum, item) => sum + item.price, 0));
-    cartEmpty.hidden = cart.length > 0;
-    cartItemsList.hidden = cart.length === 0;
+    const itemCount = Number(cart.itemCount) || 0;
+    cartCount.textContent = String(itemCount);
+    cartCount.setAttribute("aria-label", `Sepette ${itemCount} ürün var`);
+    cartTotal.textContent = money.format(Number(cart.total) || 0);
+    cartEmpty.hidden = items.length > 0;
+    cartItemsList.hidden = items.length === 0;
+  };
+
+  const updateCart = async (path, options, successMessage) => {
+    if (cartMutationPending) return;
+    cartMutationPending = true;
+    try {
+      cart = await requestCart(path, options);
+      renderCart();
+      if (successMessage) showToast(successMessage);
+    } catch (error) {
+      handleCartError(error);
+    } finally {
+      cartMutationPending = false;
+    }
   };
 
   cartToggle.addEventListener("click", () => {
@@ -510,7 +578,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   document.querySelectorAll(".product-card .add-to-cart").forEach((addButton) => {
-    addButton.addEventListener("click", () => {
+    addButton.addEventListener("click", async () => {
       const card = addButton.closest(".product-card");
       const selectedSize = card.querySelector('.size-list button[aria-pressed="true"]');
       if (!selectedSize) {
@@ -519,26 +587,48 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
 
-      cart.push({
-        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        variantId: selectedSize.dataset.variantId || null,
-        name: card.querySelector("h3").textContent,
-        size: selectedSize.textContent.trim(),
-        price: Number(selectedSize.dataset.price || card.dataset.price),
-      });
-      saveCart();
-      renderCart();
-      showToast("Ürün sepetine eklendi ♥");
+      const variantId = selectedSize.dataset.variantId;
+      if (!variantId) {
+        showToast("Bu ürün için stok bilgisi bulunamadı.");
+        return;
+      }
+
+      addButton.disabled = true;
+      try {
+        await updateCart("/cart/items", {
+          method: "POST",
+          body: JSON.stringify({ variantId, quantity: 1 }),
+        }, "Ürün sepetine eklendi ♥");
+      } finally {
+        addButton.disabled = false;
+      }
     });
   });
 
   cartItemsList.addEventListener("click", (event) => {
-    const removeButton = event.target.closest("[data-remove-id]");
-    if (!removeButton) return;
-    cart = cart.filter((item) => item.id !== removeButton.dataset.removeId);
-    saveCart();
-    renderCart();
+    const actionButton = event.target.closest("[data-cart-action]");
+    if (!actionButton || actionButton.disabled) return;
+
+    const itemId = encodeURIComponent(actionButton.dataset.itemId);
+    if (actionButton.dataset.cartAction === "remove") {
+      void updateCart(`/cart/items/${itemId}`, { method: "DELETE" }, "Ürün sepetten kaldırıldı.");
+      return;
+    }
+
+    void updateCart(`/cart/items/${itemId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ quantity: Number(actionButton.dataset.quantity) }),
+    }, "Sepet miktarı güncellendi.");
   });
+
+  const currentUser = await (window.MODA_AUTH_READY || Promise.resolve(null));
+  if (currentUser) {
+    try {
+      cart = await requestCart("/cart");
+    } catch (error) {
+      handleCartError(error);
+    }
+  }
 
   renderCart();
 });

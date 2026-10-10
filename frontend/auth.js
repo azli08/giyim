@@ -4,10 +4,9 @@ const requestAuth = async (path, options = {}) => {
   const response = await fetch(`${authApiBaseUrl}${path}`, {
     ...options,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
+    headers: options.body
+      ? { "Content-Type": "application/json", ...options.headers }
+      : options.headers,
   });
 
   let data = {};
@@ -18,11 +17,17 @@ const requestAuth = async (path, options = {}) => {
   }
 
   if (!response.ok) {
-    throw new Error(data.error || "İşlem tamamlanamadı. Lütfen tekrar dene.");
+    const error = new Error(data.error || "İşlem tamamlanamadı. Lütfen tekrar dene.");
+    error.status = response.status;
+    throw error;
   }
 
   return data;
 };
+
+window.MODA_AUTH_READY = requestAuth("/auth/me")
+  .then(({ user }) => user || null)
+  .catch(() => null);
 
 const setAuthFeedback = (element, message, state = "") => {
   element.textContent = message;
@@ -99,7 +104,7 @@ const initAccountLink = async () => {
   }
 
   try {
-    const { user } = await requestAuth("/auth/me");
+    const user = await window.MODA_AUTH_READY;
     if (!user) return;
 
     accountArea.replaceChildren();
