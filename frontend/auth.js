@@ -1,4 +1,7 @@
-const authApiBaseUrl = (window.MODA_API_URL || "http://localhost:3000/api").replace(/\/$/, "");
+const authLocalApiHost = ["localhost", "127.0.0.1"].includes(window.location.hostname)
+  ? window.location.hostname
+  : "localhost";
+const authApiBaseUrl = (window.MODA_API_URL || `http://${authLocalApiHost}:3000/api`).replace(/\/$/, "");
 
 const requestAuth = async (path, options = {}) => {
   const response = await fetch(`${authApiBaseUrl}${path}`, {
@@ -75,7 +78,10 @@ const initAuthForm = () => {
         body: JSON.stringify(payload),
       });
       const firstName = result.user?.firstName;
-      setAuthFeedback(feedback, firstName ? `Hoş geldin, ${firstName}! Mağazaya yönlendiriliyorsun…` : "Başarılı! Mağazaya yönlendiriliyorsun…", "success");
+      const welcomeMessage = firstName
+        ? `Hoş geldin, ${firstName}! Mağazaya yönlendiriliyorsun…`
+        : "Başarılı! Mağazaya yönlendiriliyorsun…";
+      setAuthFeedback(feedback, welcomeMessage, "success");
       window.setTimeout(() => {
         window.location.assign("./index.html");
       }, 700);
@@ -98,7 +104,11 @@ const initAccountLink = async () => {
     const loginLink = document.createElement("a");
     loginLink.className = "account-link";
     loginLink.href = "./giris.html";
-    loginLink.innerHTML = '<span class="account-icon" aria-hidden="true">♥</span><span>Giriş Yap</span><span class="account-arrow" aria-hidden="true">→</span>';
+    loginLink.innerHTML = `
+      <span class="account-icon" aria-hidden="true">♥</span>
+      <span>Giriş Yap</span>
+      <span class="account-arrow" aria-hidden="true">→</span>
+    `;
     accountArea.append(loginLink);
     header.insertBefore(accountArea, cartArea);
   }

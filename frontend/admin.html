@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#fff8f5">
+  <title>Yönetim Paneli | MODA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./admin.css">
+</head>
+<body class="admin-page">
+  <header class="admin-header">
+    <a class="brand" href="./index.html"><span class="admin-brand-icon" aria-hidden="true">♥</span><span>MODA</span></a>
+    <a class="admin-store-link" href="./index.html">Mağazaya dön <span aria-hidden="true">→</span></a>
+  </header>
+
+  <main class="admin-main">
+    <section class="admin-login-card" id="admin-login-view" aria-labelledby="admin-login-title">
+      <div class="admin-kicker">MODA YÖNETİMİ</div>
+      <h1 id="admin-login-title">Yönetici girişi</h1>
+      <p>Ürün kataloğunu ve stokları hesabınla güvenli şekilde yönet.</p>
+      <form id="admin-login-form" class="admin-login-form">
+        <label>E-posta adresi<input name="email" type="email" autocomplete="username" required maxlength="254"></label>
+        <label>Şifre<input name="password" type="password" autocomplete="current-password" required maxlength="128"></label>
+        <button class="admin-button admin-button-primary" type="submit">Panele giriş yap <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="admin-feedback" id="admin-login-feedback" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="admin-dashboard" id="admin-dashboard" hidden>
+      <div class="admin-dashboard-heading">
+        <div><p class="admin-kicker">KONTROL PANELİ</p><h1>Ürün yönetimi</h1><p class="admin-subtitle" id="admin-greeting"></p></div>
+        <button class="admin-button admin-button-secondary" id="admin-logout" type="button">Çıkış yap</button>
+      </div>
+
+      <div class="admin-dashboard-grid">
+        <section class="admin-card admin-create-card" aria-labelledby="admin-create-title">
+          <div class="admin-section-heading"><div><p class="admin-kicker">KATALOĞA EKLE</p><h2 id="admin-create-title">Yeni ürün</h2></div><span class="admin-heading-icon" aria-hidden="true">＋</span></div>
+          <form id="admin-product-form" class="admin-product-form">
+            <label>Ürün adı<input name="name" required maxlength="160" placeholder="Örn. Minik Kaşif Takımı"></label>
+            <label>Ürün bağlantı adı (slug)<input name="slug" required pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="minik-kasif-takimi"><small>Türkçe karakter kullanmadan, kelimeleri tireyle ayır.</small></label>
+            <label>Kategori<select name="categoryId" id="admin-category" required><option value="">Kategori seç</option></select></label>
+            <label>Açıklama<textarea name="description" rows="3" maxlength="5000" placeholder="Ürünü kısaca tanıt."></textarea></label>
+            <div class="admin-variant-heading"><span>Varyantlar <span class="admin-optional">(beden, renk ve stok)</span></span><button class="admin-add-variant" id="admin-add-variant" type="button">＋ Varyant ekle</button></div>
+            <div class="admin-variant-form-list" id="admin-variant-form-list">
+              <fieldset class="admin-variant-form-row">
+                <legend>Varyant 1</legend>
+                <label>SKU<input data-field="sku" required minlength="2" maxlength="80" pattern="[A-Za-z0-9._-]+" placeholder="MINIK-KASIF-45"></label>
+                <label>Beden<input data-field="size" required maxlength="40" placeholder="4-5"></label>
+                <label>Renk<input data-field="color" required maxlength="80" placeholder="Pembe"></label>
+                <label>Fiyat (₺)<input data-field="price" type="number" min="0" step="0.01" required placeholder="549.90"></label>
+                <label>Stok<input data-field="stockQuantity" type="number" min="0" max="2147483647" step="1" required value="0"></label>
+                <button class="admin-remove-variant" type="button" aria-label="Bu varyantı kaldır" hidden>×</button>
+              </fieldset>
+            </div>
+            <label>Ürün görseli bağlantısı <span class="admin-optional">(isteğe bağlı)</span><input name="imageUrl" type="text" maxlength="1000" placeholder="https://… veya /images/urun.jpg"></label>
+            <label>Görsel açıklaması<input name="imageAlt" maxlength="300" placeholder="Ürünün kısa görsel açıklaması"></label>
+            <button class="admin-button admin-button-primary" type="submit">Ürünü kaydet <span aria-hidden="true">→</span></button>
+            <p class="admin-feedback" id="admin-product-feedback" role="status" aria-live="polite"></p>
+          </form>
+        </section>
+
+        <section class="admin-card admin-inventory-card" aria-labelledby="admin-inventory-title">
+          <div class="admin-section-heading"><div><p class="admin-kicker">KATALOG</p><h2 id="admin-inventory-title">Ürünler ve stok</h2></div><button class="admin-refresh" id="admin-refresh" type="button" aria-label="Ürün listesini yenile">↻</button></div>
+          <p class="admin-list-hint">Stok sayısını değiştirmek için varyantın yanındaki değeri güncelle.</p>
+          <div class="admin-product-list" id="admin-product-list" aria-live="polite"><p class="admin-empty">Ürünler yükleniyor…</p></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script src="./admin.js"></script>
+</body>
+</html>

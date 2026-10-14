@@ -19,10 +19,13 @@ const allowedOrigins = new Set(
     .map((origin) => origin.trim())
     .filter(Boolean)
 );
+const isAllowedOrigin = (origin) =>
+  allowedOrigins.has(origin) ||
+  (process.env.NODE_ENV !== "production" && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin));
 
 app.use((request, response, next) => {
   const origin = request.get("Origin");
-  if (origin && allowedOrigins.has(origin)) {
+  if (origin && isAllowedOrigin(origin)) {
     response.set("Access-Control-Allow-Origin", origin);
     response.set("Vary", "Origin");
     response.set("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
@@ -33,7 +36,7 @@ app.use((request, response, next) => {
   if (request.method === "OPTIONS") return response.sendStatus(204);
 
   const changesData = ["POST", "PUT", "PATCH", "DELETE"].includes(request.method);
-  if (changesData && origin && !allowedOrigins.has(origin)) {
+  if (changesData && origin && !isAllowedOrigin(origin)) {
     return response.status(403).json({ error: "Bu kaynağa izin verilmiyor." });
   }
 
@@ -58,7 +61,8 @@ const setSessionCookie = (response, token) => {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   response.set(
     "Set-Cookie",
-    `${sessionCookieName}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(sessionDurationMs / 1000)}${secure}`
+    `${sessionCookieName}=${token}; Path=/; HttpOnly; SameSite=Lax; ` +
+      `Max-Age=${Math.floor(sessionDurationMs / 1000)}${secure}`
   );
 };
 
@@ -90,6 +94,7 @@ const publicUser = (user) => ({
   email: user.email,
   firstName: user.first_name,
   lastName: user.last_name,
+  isAdmin: user.role === "admin",
 });
 
 const createUserSession = async (database, userId) => {
@@ -114,7 +119,7 @@ const requireAuth = async (request, response, next) => {
 
   try {
     const result = await pool.query(
-      `SELECT u.id, u.email, u.first_name, u.last_name, s.token_hash
+      `SELECT u.id, u.email, u.first_name, u.last_name, u.role, s.token_hash
        FROM user_sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = $1 AND s.expires_at > NOW()`,
@@ -135,6 +140,16 @@ const requireAuth = async (request, response, next) => {
     console.error("Oturum doğrulama başarısız:", error);
     response.status(500).json({ error: "Sunucu hatası" });
   }
+};
+
+const requireAdmin = (request, response, next) => {
+  requireAuth(request, response, (error) => {
+    if (error) return next(error);
+    if (request.auth.user.role !== "admin") {
+      return response.status(403).json({ error: "Bu işlem için yönetici yetkisi gerekli." });
+    }
+    next();
+  });
 };
 
 const getOrCreateCartId = async (database, userId) => {
@@ -193,6 +208,45 @@ const readCart = async (database, cartId) => {
   };
 };
 
+const readFavorites = async (database, userId) => {
+  const result = await database.query(
+    `SELECT p.slug AS product_slug,
+            p.name,
+            COALESCE((
+              SELECT pi.image_url
+              FROM product_images pi
+              WHERE pi.product_id = p.id
+              ORDER BY pi.sort_order, pi.id
+              LIMIT 1
+            ), '') AS image,
+            COALESCE((
+              SELECT pi.alt_text
+              FROM product_images pi
+              WHERE pi.product_id = p.id
+              ORDER BY pi.sort_order, pi.id
+              LIMIT 1
+            ), '') AS image_alt,
+            COALESCE((
+              SELECT MIN(v.price)
+              FROM product_variants v
+              WHERE v.product_id = p.id AND v.is_active = TRUE
+            ), 0) AS price
+     FROM user_favorites uf
+     JOIN products p ON p.id = uf.product_id
+     WHERE uf.user_id = $1 AND p.is_active = TRUE
+     ORDER BY uf.created_at DESC, p.id`,
+    [userId]
+  );
+
+  return result.rows.map((favorite) => ({
+    productSlug: favorite.product_slug,
+    name: favorite.name,
+    image: favorite.image,
+    imageAlt: favorite.image_alt,
+    price: favorite.price,
+  }));
+};
+
 app.post("/api/auth/register", async (request, response) => {
   const { email, password, firstName, lastName } = request.body ?? {};
   const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
@@ -228,6 +282,7 @@ app.post("/api/auth/register", async (request, response) => {
       [normalizedEmail, passwordHash, normalizedFirstName, normalizedLastName]
     );
     const user = result.rows[0];
+    await getOrCreateCartId(client, user.id);
     const token = await createUserSession(client, user.id);
     await client.query("DELETE FROM user_sessions WHERE expires_at <= NOW()");
     await client.query("COMMIT");
@@ -263,7 +318,7 @@ app.post("/api/auth/login", async (request, response) => {
 
   try {
     const result = await pool.query(
-      `SELECT id, email, password_hash, first_name, last_name
+      `SELECT id, email, password_hash, first_name, last_name, role
        FROM users
        WHERE email = $1`,
       [normalizedEmail]
@@ -274,6 +329,7 @@ app.post("/api/auth/login", async (request, response) => {
       return response.status(401).json({ error: "E-posta veya parola hatalı." });
     }
 
+    await getOrCreateCartId(pool, user.id);
     const token = await createUserSession(pool, user.id);
     await pool.query("DELETE FROM user_sessions WHERE expires_at <= NOW()");
     setSessionCookie(response, token);
@@ -309,6 +365,163 @@ app.get("/api/health", (request, response) => {
   response.json({ status: "ok" });
 });
 
+app.get("/api/admin/me", requireAdmin, (request, response) => {
+  response.json({ user: publicUser(request.auth.user) });
+});
+
+app.get("/api/admin/categories", requireAdmin, async (request, response) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, name, slug FROM categories ORDER BY name"
+    );
+    response.json({ categories: result.rows });
+  } catch (error) {
+    console.error("Yönetim kategorileri yüklenemedi:", error);
+    response.status(500).json({ error: "Kategoriler yüklenemedi." });
+  }
+});
+
+app.get("/api/admin/products", requireAdmin, async (request, response) => {
+  try {
+    const result = await pool.query(
+      `SELECT p.id, p.name, p.slug, p.description, p.is_active,
+              p.category_id, c.name AS category,
+              COALESCE((
+                SELECT jsonb_agg(jsonb_build_object(
+                  'id', v.id, 'sku', v.sku, 'size', v.size,
+                  'color', v.color, 'price', v.price,
+                  'stockQuantity', v.stock_quantity
+                ) ORDER BY v.size, v.color)
+                FROM product_variants v
+                WHERE v.product_id = p.id AND v.is_active = TRUE
+              ), '[]'::jsonb) AS variants,
+              COALESCE((
+                SELECT jsonb_build_object('url', pi.image_url, 'alt', pi.alt_text)
+                FROM product_images pi
+                WHERE pi.product_id = p.id
+                ORDER BY pi.sort_order, pi.id
+                LIMIT 1
+              ), jsonb_build_object('url', NULL, 'alt', '')) AS image
+       FROM products p
+       LEFT JOIN categories c ON c.id = p.category_id
+       ORDER BY p.created_at DESC, p.id DESC`
+    );
+    response.json({ products: result.rows });
+  } catch (error) {
+    console.error("Yönetim ürünleri yüklenemedi:", error);
+    response.status(500).json({ error: "Ürünler yüklenemedi." });
+  }
+});
+
+app.post("/api/admin/products", requireAdmin, async (request, response) => {
+  const {
+    name,
+    slug,
+    description = "",
+    categoryId = null,
+    imageUrl = "",
+    imageAlt = "",
+    variants,
+  } = request.body ?? {};
+  const normalizedSlug = typeof slug === "string" ? slug.trim() : "";
+  const normalizedImageUrl = typeof imageUrl === "string" ? imageUrl.trim() : "";
+  const validImageUrl =
+    !normalizedImageUrl ||
+    /^https?:\/\//i.test(normalizedImageUrl) ||
+    (/^\/(?!\/)/.test(normalizedImageUrl) && !normalizedImageUrl.includes("\\"));
+  const validVariants = Array.isArray(variants) && variants.length > 0 && variants.length <= 30 &&
+    variants.every((variant) =>
+      variant &&
+      typeof variant.sku === "string" && /^[A-Za-z0-9._-]{2,80}$/.test(variant.sku.trim()) &&
+      typeof variant.size === "string" && variant.size.trim().length > 0 && variant.size.trim().length <= 40 &&
+      typeof variant.color === "string" && variant.color.trim().length > 0 && variant.color.trim().length <= 80 &&
+      typeof variant.price === "string" && /^\d{1,10}(\.\d{1,2})?$/.test(variant.price) &&
+      Number.isSafeInteger(variant.stockQuantity) && variant.stockQuantity >= 0 && variant.stockQuantity <= 2147483647
+    );
+
+  if (
+    typeof name !== "string" || !name.trim() || name.trim().length > 160 ||
+    !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalizedSlug) ||
+    typeof description !== "string" || description.length > 5000 ||
+    (categoryId !== null && (!Number.isSafeInteger(categoryId) || categoryId < 1)) ||
+    !validImageUrl || typeof imageAlt !== "string" || imageAlt.length > 300 ||
+    !validVariants
+  ) {
+    return response.status(400).json({ error: "Ürün ve ilk varyant alanlarını kontrol edin." });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const productResult = await client.query(
+      `INSERT INTO products (category_id, name, slug, description)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, name, slug, description, category_id`,
+      [categoryId, name.trim(), normalizedSlug, description.trim()]
+    );
+    const product = productResult.rows[0];
+
+    const createdVariants = [];
+    for (const variant of variants) {
+      const variantResult = await client.query(
+        `INSERT INTO product_variants
+           (product_id, sku, size, color, price, stock_quantity)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, sku, size, color, price, stock_quantity`,
+        [product.id, variant.sku.trim(), variant.size.trim(), variant.color.trim(), variant.price, variant.stockQuantity]
+      );
+      createdVariants.push(variantResult.rows[0]);
+    }
+
+    if (normalizedImageUrl) {
+      await client.query(
+        `INSERT INTO product_images (product_id, image_url, alt_text)
+         VALUES ($1, $2, $3)`,
+        [product.id, normalizedImageUrl, imageAlt.trim()]
+      );
+    }
+
+    await client.query("COMMIT");
+    response.status(201).json({ product, variants: createdVariants });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    if (error.code === "23505") {
+      return response.status(409).json({ error: "Ürün slug veya SKU zaten kullanılıyor." });
+    }
+    if (error.code === "23503") {
+      return response.status(400).json({ error: "Seçilen kategori bulunamadı." });
+    }
+    console.error("Yönetim ürünü oluşturulamadı:", error);
+    response.status(500).json({ error: "Ürün oluşturulamadı." });
+  } finally {
+    client.release();
+  }
+});
+
+app.patch("/api/admin/variants/:sku/stock", requireAdmin, async (request, response) => {
+  const { stockQuantity } = request.body ?? {};
+  if (!Number.isSafeInteger(stockQuantity) || stockQuantity < 0) {
+    return response.status(400).json({ error: "Stok sıfır veya daha büyük bir tam sayı olmalı." });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE product_variants
+       SET stock_quantity = $1
+       WHERE sku = $2
+       RETURNING sku, stock_quantity`,
+      [stockQuantity, request.params.sku]
+    );
+    if (result.rows.length === 0) {
+      return response.status(404).json({ error: "Varyant bulunamadı." });
+    }
+    response.json(result.rows[0]);
+  } catch (error) {
+    console.error("Yönetim stok güncellemesi başarısız:", error);
+    response.status(500).json({ error: "Stok güncellenemedi." });
+  }
+});
+
 app.get("/api/cart", requireAuth, async (request, response) => {
   try {
     const cartId = await getOrCreateCartId(pool, request.auth.user.id);
@@ -316,6 +529,64 @@ app.get("/api/cart", requireAuth, async (request, response) => {
   } catch (error) {
     console.error("Sepet okunamadı:", error);
     response.status(500).json({ error: "Sepet yüklenemedi." });
+  }
+});
+
+app.get("/api/favorites", requireAuth, async (request, response) => {
+  try {
+    response.json({ favorites: await readFavorites(pool, request.auth.user.id) });
+  } catch (error) {
+    console.error("Favoriler yüklenemedi:", error);
+    response.status(500).json({ error: "Favoriler yüklenemedi." });
+  }
+});
+
+app.post("/api/favorites", requireAuth, async (request, response) => {
+  const productSlug = request.body?.productSlug;
+  if (typeof productSlug !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(productSlug)) {
+    return response.status(400).json({ error: "Geçerli bir ürün slug değeri gerekli." });
+  }
+
+  try {
+    const product = await pool.query(
+      "SELECT id FROM products WHERE slug = $1 AND is_active = TRUE",
+      [productSlug]
+    );
+    if (product.rows.length === 0) {
+      return response.status(404).json({ error: "Ürün bulunamadı." });
+    }
+
+    await pool.query(
+      `INSERT INTO user_favorites (user_id, product_id)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id, product_id) DO NOTHING`,
+      [request.auth.user.id, product.rows[0].id]
+    );
+
+    response.status(201).json({ favorites: await readFavorites(pool, request.auth.user.id) });
+  } catch (error) {
+    console.error("Favori kaydedilemedi:", error);
+    response.status(500).json({ error: "Favori kaydedilemedi." });
+  }
+});
+
+app.delete("/api/favorites/:productSlug", requireAuth, async (request, response) => {
+  const { productSlug } = request.params;
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(productSlug)) {
+    return response.status(400).json({ error: "Geçerli bir ürün slug değeri gerekli." });
+  }
+
+  try {
+    await pool.query(
+      `DELETE FROM user_favorites uf
+       USING products p
+       WHERE uf.user_id = $1 AND uf.product_id = p.id AND p.slug = $2`,
+      [request.auth.user.id, productSlug]
+    );
+    response.json({ favorites: await readFavorites(pool, request.auth.user.id) });
+  } catch (error) {
+    console.error("Favori silinemedi:", error);
+    response.status(500).json({ error: "Favori silinemedi." });
   }
 });
 
@@ -558,7 +829,7 @@ app.get("/api/products/:id", async (request, response) => {
   }
 });
 
-app.post("/api/products", async (request, response) => {
+app.post("/api/products", requireAdmin, async (request, response) => {
   const { name, slug, description = "", categoryId = null } =
     request.body ?? {};
 
@@ -610,7 +881,7 @@ app.post("/api/products", async (request, response) => {
   }
 });
 
-app.post("/api/products/:id/variants", async (request, response) => {
+app.post("/api/products/:id/variants", requireAdmin, async (request, response) => {
   const productId = request.params.id;
   const { sku, size, color, price, stockQuantity = 0 } =
     request.body ?? {};
@@ -698,7 +969,7 @@ app.get("/api/products/:id/variants", async (request, response) => {
   }
 });
 
-app.patch("/api/variants/:sku/stock", async (request, response) => {
+app.patch("/api/variants/:sku/stock", requireAdmin, async (request, response) => {
   const { stockQuantity } = request.body ?? {};
 
   if (!Number.isSafeInteger(stockQuantity) || stockQuantity < 0) {

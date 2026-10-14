@@ -15,11 +15,13 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-  "test": "echo \"Error: no test specified\" && exit 1",
-  "start": "node --env-file=.env migrate.js && node --env-file=.env index.js",
-  "db:seed": "node --env-file=.env seed.js",
-  "db:migrate": "node --env-file=.env migrate.js"
-},
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node --env-file=.env migrate.js && node --env-file=.env index.js",
+    "db:seed": "node --env-file=.env seed.js",
+    "db:migrate": "node --env-file=.env migrate.js",
+    "db:import": "node --env-file=.env import-products.js",
+    "admin:create": "node --env-file=.env create-admin.js"
+  },
   "dependencies": {
     "express": "^5.2.1",
     "pg": "^8.23.1"

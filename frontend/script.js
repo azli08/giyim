@@ -1,9 +1,32 @@
-const apiBaseUrl = (window.MODA_API_URL || "http://localhost:3000/api").replace(/\/$/, "");
+const storefrontLocalApiHost = ["localhost", "127.0.0.1"].includes(window.location.hostname)
+  ? window.location.hostname
+  : "localhost";
+const apiBaseUrl = (window.MODA_API_URL || `http://${storefrontLocalApiHost}:3000/api`).replace(/\/$/, "");
+
+const requestStorefrontApi = async (path, options = {}, fallbackMessage = "İstek tamamlanamadı.") => {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...options,
+    credentials: "include",
+    headers: options.body
+      ? { "Content-Type": "application/json", ...options.headers }
+      : options.headers,
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.error || fallbackMessage);
+    error.status = response.status;
+    throw error;
+  }
+
+  return data;
+};
 
 const createProductCard = (product) => {
   const card = document.createElement("article");
   card.className = "product-card";
   card.dataset.productId = product.id;
+  card.dataset.productSlug = product.slug;
 
   const variants = Array.isArray(product.variants) ? product.variants : [];
   const availablePrices = variants.map((variant) => Number(variant.price)).filter(Number.isFinite);
@@ -24,7 +47,10 @@ const createProductCard = (product) => {
   const price = document.createElement("p");
   price.className = "product-price";
   price.textContent = availablePrices.length
-    ? new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" }).format(Math.min(...availablePrices))
+    ? new Intl.NumberFormat("tr-TR", {
+      style: "currency",
+      currency: "TRY",
+    }).format(Math.min(...availablePrices))
     : "Stokta yok";
   const sizeLabel = document.createElement("p");
   sizeLabel.className = "size-label";
@@ -156,40 +182,61 @@ document.addEventListener("DOMContentLoaded", async () => {
   const cards = document.querySelectorAll(".product-card");
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   let favorites = [];
-  try {
-    favorites = JSON.parse(localStorage.getItem("moda-favorites") || "[]");
-    if (!Array.isArray(favorites)) favorites = [];
-  } catch {
-    favorites = [];
-  }
+  const currentUser = await (window.MODA_AUTH_READY || Promise.resolve(null));
 
-  const getFavoriteKey = (card) =>
-    `${card.querySelector("h3")?.textContent.trim() || ""}::${card.querySelector("img")?.getAttribute("src") || ""}`;
+  const loadFavorites = async () => {
+    if (!currentUser) return;
 
-  const saveFavorites = () => {
     try {
-      localStorage.setItem("moda-favorites", JSON.stringify(favorites));
-    } catch {
-      // Favoriler bu sayfa açıkken çalışmaya devam eder.
+      const result = await requestStorefrontApi("/favorites", {}, "Favoriler yüklenemedi.");
+      favorites = Array.isArray(result.favorites) ? result.favorites : [];
+    } catch (error) {
+      if (error.status === 401) {
+        window.location.assign("./giris.html");
+        return;
+      }
+      console.error("Favoriler yüklenemedi:", error);
     }
   };
 
-  const isFavoriteKey = (key) => favorites.some((favorite) =>
-    typeof favorite === "string" ? favorite === key : favorite?.key === key
-  );
+  const getFavoriteSlug = (card) => card.dataset.productSlug || "";
+  const isFavoriteSlug = (productSlug) =>
+    favorites.some((favorite) => favorite.productSlug === productSlug);
+
+  const syncFavoriteButtons = () => {
+    cards.forEach((card) => {
+      const productSlug = getFavoriteSlug(card);
+      const isFavorite = isFavoriteSlug(productSlug);
+      const button = card.querySelector(".favorite-toggle");
+      if (!button) return;
+
+      button.setAttribute("aria-pressed", String(isFavorite));
+      button.setAttribute("aria-label", isFavorite ? "Favorilerden çıkar" : "Favorilere ekle");
+      button.classList.toggle("is-favorite", isFavorite);
+      button.firstElementChild.textContent = isFavorite ? "♥" : "♡";
+    });
+  };
 
   const favoriteButton = document.createElement("button");
   favoriteButton.className = "favorites-toggle";
   favoriteButton.type = "button";
   favoriteButton.setAttribute("aria-expanded", "false");
   favoriteButton.setAttribute("aria-controls", "favorites-panel");
-  favoriteButton.innerHTML = '<i aria-hidden="true">♥</i><span>Favoriler</span><span class="favorites-count" aria-label="Favori sayısı">0</span>';
+  favoriteButton.innerHTML = `
+    <i aria-hidden="true">♥</i>
+    <span>Favoriler</span>
+    <span class="favorites-count" aria-label="Favori sayısı">0</span>
+  `;
 
   const favoritesPanel = document.createElement("div");
   favoritesPanel.className = "favorites-panel";
   favoritesPanel.id = "favorites-panel";
   favoritesPanel.hidden = true;
-  favoritesPanel.innerHTML = '<h2>Favorilerim</h2><ul class="favorites-list"></ul><p class="favorites-empty">Henüz favori ürünün yok.</p>';
+  favoritesPanel.innerHTML = `
+    <h2>Favorilerim</h2>
+    <ul class="favorites-list"></ul>
+    <p class="favorites-empty">Henüz favori ürünün yok.</p>
+  `;
 
   const favoritesArea = document.createElement("div");
   favoritesArea.className = "favorites-area";
@@ -198,42 +245,81 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const renderFavorites = () => {
     const favoritesList = favoritesPanel.querySelector(".favorites-list");
-    const savedProducts = favorites.map((favorite) => {
-      if (typeof favorite !== "string") return favorite;
-      const [name, image = ""] = favorite.split("::");
-      return { key: favorite, name, image, alt: "", priceLabel: "" };
-    });
     favoritesList.replaceChildren();
 
-    savedProducts.forEach((favorite) => {
+    favorites.forEach((favorite) => {
       const row = document.createElement("li");
       row.className = "favorite-item";
       const image = document.createElement("img");
       image.src = favorite.image;
-      image.alt = favorite.alt || "";
+      image.alt = favorite.imageAlt || "";
       const info = document.createElement("span");
       info.className = "favorite-item-info";
       const name = document.createElement("strong");
       name.textContent = favorite.name;
       const price = document.createElement("small");
-      price.textContent = favorite.priceLabel;
+      price.textContent = new Intl.NumberFormat("tr-TR", {
+        style: "currency",
+        currency: "TRY",
+      }).format(Number(favorite.price) || 0);
       info.append(name, price);
       const remove = document.createElement("button");
       remove.className = "favorite-remove";
       remove.type = "button";
-      remove.dataset.favoriteKey = favorite.key;
+      remove.dataset.favoriteSlug = favorite.productSlug;
       remove.setAttribute("aria-label", `${favorite.name} ürününü favorilerden çıkar`);
       remove.textContent = "×";
       row.append(image, info, remove);
       favoritesList.append(row);
     });
 
-    favoriteButton.querySelector(".favorites-count").textContent = String(savedProducts.length);
-    favoritesPanel.querySelector(".favorites-empty").hidden = savedProducts.length > 0;
-    favoritesList.hidden = savedProducts.length === 0;
+    favoriteButton.querySelector(".favorites-count").textContent = String(favorites.length);
+    favoritesPanel.querySelector(".favorites-empty").hidden = favorites.length > 0;
+    favoritesList.hidden = favorites.length === 0;
+    syncFavoriteButtons();
+  };
+
+  const changeFavorite = async (productSlug, shouldBeFavorite) => {
+    if (!currentUser) {
+      window.location.assign("./giris.html");
+      return;
+    }
+    if (!productSlug) {
+      showToast("Favorilere eklemek için ürün kataloğunun yüklenmesi gerekiyor.");
+      return;
+    }
+
+    const path = shouldBeFavorite
+      ? "/favorites"
+      : `/favorites/${encodeURIComponent(productSlug)}`;
+    const options = shouldBeFavorite
+      ? { method: "POST", body: JSON.stringify({ productSlug }) }
+      : { method: "DELETE" };
+
+    try {
+      const result = await requestStorefrontApi(path, options, "Favori işlemi tamamlanamadı.");
+      favorites = Array.isArray(result.favorites) ? result.favorites : [];
+      renderFavorites();
+      showToast(shouldBeFavorite ? "Favorilere eklendi ♥" : "Favorilerden çıkarıldı.");
+    } catch (error) {
+      if (error.status === 401) {
+        window.location.assign("./giris.html");
+        return;
+      }
+      if (error.status === 404 && error.message === "Bulunamadı") {
+        showToast("Favori servisi güncel değil. Backend'i yeniden başlatıp tekrar dene.");
+        return;
+      }
+      showToast(error.message || "Favori işlemi tamamlanamadı.");
+    }
   };
 
   favoriteButton.addEventListener("click", () => {
+    if (!currentUser) {
+      window.location.assign("./giris.html");
+      return;
+    }
+
     const open = favoritesPanel.hidden;
     favoritesPanel.hidden = !open;
     favoriteButton.setAttribute("aria-expanded", String(open));
@@ -244,23 +330,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   favoritesPanel.addEventListener("click", (event) => {
-    const removeButton = event.target.closest("[data-favorite-key]");
+    const removeButton = event.target.closest("[data-favorite-slug]");
     if (!removeButton) return;
-    const key = removeButton.dataset.favoriteKey;
-    favorites = favorites.filter((favorite) =>
-      (typeof favorite === "string" ? favorite : favorite?.key) !== key
-    );
-    saveFavorites();
-    cards.forEach((card) => {
-      if (getFavoriteKey(card) !== key) return;
-      const button = card.querySelector(".favorite-toggle");
-      button?.setAttribute("aria-pressed", "false");
-      button?.setAttribute("aria-label", "Favorilere ekle");
-      button?.classList.remove("is-favorite");
-      if (button?.firstElementChild) button.firstElementChild.textContent = "♡";
-    });
-    renderFavorites();
-    showToast("Favorilerden çıkarıldı.");
+    void changeFavorite(removeButton.dataset.favoriteSlug, false);
   });
 
   document.addEventListener("click", (event) => {
@@ -323,24 +395,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   let activeProductSize = null;
 
   cards.forEach((card) => {
-    const favoriteKey = getFavoriteKey(card);
-    const oldFavoriteIndex = favorites.indexOf(favoriteKey);
-    if (oldFavoriteIndex !== -1) {
-      favorites.splice(oldFavoriteIndex, 1, {
-        key: favoriteKey,
-        name: card.querySelector("h3")?.textContent.trim() || "Ürün",
-        image: card.querySelector("img")?.getAttribute("src") || "",
-        alt: card.querySelector("img")?.alt || "",
-        priceLabel: card.querySelector(".product-price")?.textContent.replace(/\s+/g, " ").trim() || "",
-      });
-    }
+    const favoriteSlug = getFavoriteSlug(card);
     const favoriteButton = document.createElement("button");
     favoriteButton.className = "favorite-toggle";
     favoriteButton.type = "button";
-    favoriteButton.setAttribute("aria-pressed", String(isFavoriteKey(favoriteKey)));
-    favoriteButton.setAttribute("aria-label", isFavoriteKey(favoriteKey) ? "Favorilerden çıkar" : "Favorilere ekle");
+    favoriteButton.setAttribute("aria-pressed", String(isFavoriteSlug(favoriteSlug)));
+    const favoriteLabel = isFavoriteSlug(favoriteSlug)
+      ? "Favorilerden çıkar"
+      : "Favorilere ekle";
+    favoriteButton.setAttribute("aria-label", favoriteLabel);
     favoriteButton.innerHTML = '<span aria-hidden="true">♡</span>';
-    if (isFavoriteKey(favoriteKey)) {
+    if (isFavoriteSlug(favoriteSlug)) {
       favoriteButton.classList.add("is-favorite");
       favoriteButton.firstElementChild.textContent = "♥";
     }
@@ -348,30 +413,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     favoriteButton.addEventListener("click", () => {
       const isFavorite = favoriteButton.getAttribute("aria-pressed") === "true";
-      favorites = isFavorite
-        ? favorites.filter((favorite) => (typeof favorite === "string" ? favorite : favorite?.key) !== favoriteKey)
-        : [...favorites.filter((favorite) => (typeof favorite === "string" ? favorite : favorite?.key) !== favoriteKey), {
-          key: favoriteKey,
-          name: card.querySelector("h3")?.textContent.trim() || "Ürün",
-          image: card.querySelector("img")?.getAttribute("src") || "",
-          alt: card.querySelector("img")?.alt || "",
-          priceLabel: card.querySelector(".product-price")?.textContent.replace(/\s+/g, " ").trim() || "",
-        }];
-      saveFavorites();
-      favoriteButton.setAttribute("aria-pressed", String(!isFavorite));
-      favoriteButton.setAttribute("aria-label", isFavorite ? "Favorilere ekle" : "Favorilerden çıkar");
-      favoriteButton.classList.toggle("is-favorite", !isFavorite);
-      favoriteButton.firstElementChild.textContent = isFavorite ? "♡" : "♥";
-      cards.forEach((otherCard) => {
-        if (otherCard === card || getFavoriteKey(otherCard) !== favoriteKey) return;
-        const otherButton = otherCard.querySelector(".favorite-toggle");
-        otherButton?.setAttribute("aria-pressed", String(!isFavorite));
-        otherButton?.setAttribute("aria-label", isFavorite ? "Favorilere ekle" : "Favorilerden çıkar");
-        otherButton?.classList.toggle("is-favorite", !isFavorite);
-        if (otherButton?.firstElementChild) otherButton.firstElementChild.textContent = isFavorite ? "♡" : "♥";
-      });
-      renderFavorites();
-      showToast(isFavorite ? "Favorilerden çıkarıldı." : "Favorilere eklendi ♥");
+      void changeFavorite(favoriteSlug, !isFavorite);
     });
 
     const detailsButton = document.createElement("button");
@@ -411,7 +453,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       productDialog.showModal();
     });
   });
-  saveFavorites();
+  await loadFavorites();
   renderFavorites();
 
   productDialog.querySelector(".product-dialog-close").addEventListener("click", () => {
@@ -454,31 +496,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   let cart = { items: [], itemCount: 0, total: 0 };
   let cartMutationPending = false;
-
-  const requestCart = async (path, options = {}) => {
-    const response = await fetch(`${apiBaseUrl}${path}`, {
-      ...options,
-      credentials: "include",
-      headers: options.body
-        ? { "Content-Type": "application/json", ...options.headers }
-        : options.headers,
-    });
-
-    let data = {};
-    try {
-      data = await response.json();
-    } catch {
-      // Hatalı veya boş API yanıtı için aşağıda durum kodu gösterilir.
-    }
-
-    if (!response.ok) {
-      const error = new Error(data.error || "Sepet işlemi tamamlanamadı.");
-      error.status = response.status;
-      throw error;
-    }
-
-    return data;
-  };
 
   const handleCartError = (error) => {
     if (error.status === 401) {
@@ -552,9 +569,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const updateCart = async (path, options, successMessage) => {
     if (cartMutationPending) return;
+    const currentUser = await (window.MODA_AUTH_READY || Promise.resolve(null));
+    if (!currentUser) {
+      window.location.assign("./giris.html");
+      return;
+    }
+
     cartMutationPending = true;
     try {
-      cart = await requestCart(path, options);
+      cart = await requestStorefrontApi(path, options, "Sepet işlemi tamamlanamadı.");
       renderCart();
       if (successMessage) showToast(successMessage);
     } catch (error) {
@@ -579,6 +602,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   document.querySelectorAll(".product-card .add-to-cart").forEach((addButton) => {
     addButton.addEventListener("click", async () => {
+      const currentUser = await (window.MODA_AUTH_READY || Promise.resolve(null));
+      if (!currentUser) {
+        window.location.assign("./giris.html");
+        return;
+      }
+
       const card = addButton.closest(".product-card");
       const selectedSize = card.querySelector('.size-list button[aria-pressed="true"]');
       if (!selectedSize) {
@@ -621,10 +650,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     }, "Sepet miktarı güncellendi.");
   });
 
-  const currentUser = await (window.MODA_AUTH_READY || Promise.resolve(null));
-  if (currentUser) {
+  const cartUser = await (window.MODA_AUTH_READY || Promise.resolve(null));
+  if (cartUser) {
     try {
-      cart = await requestCart("/cart");
+      cart = await requestStorefrontApi("/cart", {}, "Sepet yüklenemedi.");
     } catch (error) {
       handleCartError(error);
     }
