@@ -13,6 +13,7 @@
 
 body {
   margin: 0;
+  zoom: 0.95;
   background: var(--background);
   color: var(--text);
   font-family: "Nunito", sans-serif;
