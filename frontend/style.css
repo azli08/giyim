@@ -1765,6 +1765,41 @@ html {
 }
 
 @media (min-width: 701px) and (max-width: 1050px) {
+  .site-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "brand account cart"
+      "nav nav nav";
+    gap: 10px 18px;
+    padding: 16px 32px;
+  }
+
+  .site-header > .brand {
+    grid-area: brand;
+  }
+
+  .site-header > nav {
+    grid-area: nav;
+    width: 100%;
+  }
+
+  .site-header > .account-area {
+    grid-area: account;
+  }
+
+  .site-header > .cart-area {
+    grid-area: cart;
+  }
+
+  .site-header .nav {
+    gap: 2px;
+  }
+
+  .site-header .nav-link {
+    padding: 8px 12px;
+  }
+
   .auth-layout {
     grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
     gap: 26px;
