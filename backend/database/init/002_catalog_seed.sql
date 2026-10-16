@@ -28,11 +28,20 @@ WITH catalog(category_slug, slug, name, description, image_url, alt_text, price)
   JOIN categories c ON c.slug = catalog.category_slug
   ON CONFLICT (slug) DO NOTHING
   RETURNING id, slug
+), products_to_image AS (
+  SELECT id, slug FROM inserted_products
+  UNION ALL
+  SELECT p.id, p.slug
+  FROM products p
+  JOIN catalog ON catalog.slug = p.slug
+  WHERE NOT EXISTS (
+    SELECT 1 FROM inserted_products inserted WHERE inserted.id = p.id
+  )
 )
 INSERT INTO product_images (product_id, image_url, alt_text)
 SELECT p.id, catalog.image_url, catalog.alt_text
 FROM catalog
-JOIN products p ON p.slug = catalog.slug
+JOIN products_to_image p ON p.slug = catalog.slug
 WHERE NOT EXISTS (
   SELECT 1 FROM product_images pi WHERE pi.product_id = p.id
 );

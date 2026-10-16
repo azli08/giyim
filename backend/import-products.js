@@ -108,7 +108,7 @@ function validateProducts(rows) {
     }
 
     const imageUrl = row.image_url?.trim() || "";
-    if (imageUrl && !/^https?:\/\//i.test(imageUrl) && !/^\/(?!\/)/.test(imageUrl)) {
+    if (imageUrl && !/^https?:\/\//i.test(imageUrl) && !/^(?:\/(?!\/)|\.\/)/.test(imageUrl)) {
       throw new Error(`CSV satır ${rowNumber}: görsel bağlantısı http(s) veya site içi yol olmalı.`);
     }
 
