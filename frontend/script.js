@@ -108,8 +108,155 @@ const loadCatalog = async () => {
   }
 };
 
+const initCatalogTools = () => {
+  const grid = document.querySelector(".product-grid");
+  if (!grid || !grid.parentElement || document.querySelector(".catalog-toolbar")) return;
+
+  const toolbar = document.createElement("section");
+  toolbar.className = "catalog-toolbar";
+  toolbar.setAttribute("aria-label", "Ürünleri keşfet");
+  toolbar.innerHTML = `
+    <div class="catalog-toolbar-heading"><span aria-hidden="true">✨</span><span>Ürünleri keşfet</span><span class="catalog-sparkle" aria-hidden="true">✦</span></div>
+    <div class="catalog-tool-controls">
+      <label class="catalog-search-wrap"><span class="visually-hidden">Ürünlerde ara…</span><span class="catalog-search-icon" aria-hidden="true">⌕</span><input class="catalog-search" type="search" placeholder="Ürünlerde ara…" autocomplete="off"></label>
+      <div class="catalog-select-wrap"><span>Fiyat aralığı</span><select class="catalog-price-filter"><option value="all">Tüm fiyatlar</option><option value="under-500">500 ₺ altı</option><option value="500-700">500–700 ₺</option><option value="700-plus">700 ₺ ve üzeri</option></select></div>
+      <div class="catalog-select-wrap"><span>Sırala</span><select class="catalog-sort"><option value="recommended">Önerilen</option><option value="price-asc">Fiyat: düşükten yükseğe</option><option value="price-desc">Fiyat: yüksekten düşüğe</option><option value="name">Ada göre</option></select></div>
+      <label class="catalog-stock-filter"><input type="checkbox"><span class="catalog-checkmark" aria-hidden="true">♡</span><span>Stokta olanlar</span></label>
+      <button class="catalog-clear" type="button"><span aria-hidden="true">↺</span> Filtreleri temizle</button>
+    </div>
+    <div class="catalog-toolbar-footer"><span class="catalog-results" aria-live="polite"></span><span class="catalog-empty" hidden>Bu filtrelerle ürün bulamadık. Seçimleri değiştirmeyi dene. 💌</span></div>
+  `;
+  grid.parentElement.insertBefore(toolbar, grid);
+
+  const search = toolbar.querySelector(".catalog-search");
+  const priceFilter = toolbar.querySelector(".catalog-price-filter");
+  const sort = toolbar.querySelector(".catalog-sort");
+  const inStock = toolbar.querySelector(".catalog-stock-filter input");
+  const results = toolbar.querySelector(".catalog-results");
+  const empty = toolbar.querySelector(".catalog-empty");
+  const originalOrder = [...grid.querySelectorAll(":scope > .product-card")];
+  const customSelects = [priceFilter, sort].map((select, index) => {
+    const titleElement = select.parentElement.querySelector("span");
+    const picker = document.createElement("div");
+    picker.className = "catalog-cute-select";
+    const trigger = document.createElement("button");
+    trigger.className = "catalog-cute-trigger";
+    trigger.type = "button";
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+    const menu = document.createElement("div");
+    menu.className = "catalog-cute-menu";
+    menu.id = `catalog-options-${index}`;
+    menu.setAttribute("role", "listbox");
+    menu.hidden = true;
+    trigger.setAttribute("aria-controls", menu.id);
+
+    const options = [...select.options].map((nativeOption) => {
+      const option = document.createElement("button");
+      option.className = "catalog-cute-option";
+      option.type = "button";
+      option.setAttribute("role", "option");
+      option.dataset.value = nativeOption.value;
+      option.textContent = nativeOption.textContent;
+      option.addEventListener("click", () => {
+        select.value = nativeOption.value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        menu.hidden = true;
+        trigger.setAttribute("aria-expanded", "false");
+        trigger.focus();
+      });
+      menu.append(option);
+      return option;
+    });
+
+    const sync = () => {
+      const selected = select.options[select.selectedIndex];
+      trigger.textContent = `${selected?.textContent || ""}  ˅`;
+      trigger.setAttribute("aria-label", `${titleElement.textContent}: ${selected?.textContent || ""}`);
+      options.forEach((option) => {
+        const isSelected = option.dataset.value === select.value;
+        option.setAttribute("aria-selected", String(isSelected));
+        option.classList.toggle("is-selected", isSelected);
+      });
+    };
+    const toggle = (open) => {
+      menu.hidden = !open;
+      trigger.setAttribute("aria-expanded", String(open));
+      if (open) options.find((option) => option.dataset.value === select.value)?.focus();
+    };
+    trigger.addEventListener("click", () => toggle(menu.hidden));
+    trigger.addEventListener("keydown", (event) => {
+      if (["ArrowDown", "Enter", " "].includes(event.key)) {
+        event.preventDefault();
+        toggle(true);
+      }
+    });
+    menu.addEventListener("keydown", (event) => {
+      const activeIndex = options.indexOf(document.activeElement);
+      if (event.key === "Escape") { event.preventDefault(); toggle(false); trigger.focus(); }
+      else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault();
+        const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : (activeIndex + (event.key === "ArrowDown" ? 1 : options.length - 1)) % options.length;
+        options[nextIndex]?.focus();
+      }
+    });
+    document.addEventListener("click", (event) => { if (!picker.contains(event.target)) toggle(false); });
+    select.hidden = true;
+    select.setAttribute("aria-hidden", "true");
+    select.tabIndex = -1;
+    select.after(picker);
+    picker.append(trigger, menu);
+    select.addEventListener("change", sync);
+    sync();
+    return sync;
+  });
+  const apply = () => {
+    const cards = originalOrder;
+    const query = search.value.trim().toLocaleLowerCase(window.MODA_I18N?.language || "tr");
+    let visible = cards.filter((card) => {
+      const name = card.querySelector("h3")?.textContent.toLocaleLowerCase(window.MODA_I18N?.language || "tr") || "";
+      const price = Number(card.dataset.price) || 0;
+      const hasSizes = card.querySelectorAll(".size-list button");
+      const available = !hasSizes.length || [...hasSizes].some((button) => !button.disabled);
+      const matchesPrice = priceFilter.value === "all"
+        || (priceFilter.value === "under-500" && price < 500)
+        || (priceFilter.value === "500-700" && price >= 500 && price <= 700)
+        || (priceFilter.value === "700-plus" && price > 700);
+      return name.includes(query) && matchesPrice && (!inStock.checked || available);
+    });
+
+    if (sort.value === "price-asc") visible.sort((a, b) => Number(a.dataset.price) - Number(b.dataset.price));
+    if (sort.value === "price-desc") visible.sort((a, b) => Number(b.dataset.price) - Number(a.dataset.price));
+    if (sort.value === "name") visible.sort((a, b) =>
+      (a.querySelector("h3")?.textContent || "").localeCompare(b.querySelector("h3")?.textContent || "", window.MODA_I18N?.language || "tr")
+    );
+
+    cards.forEach((card) => { card.hidden = !visible.includes(card); });
+    grid.append(...visible, ...cards.filter((card) => !visible.includes(card)));
+    results.textContent = `${window.MODA_I18N?.t("Sonuç") || "Sonuç"}: ${visible.length}`;
+    empty.hidden = visible.length > 0;
+  };
+
+  search.addEventListener("input", apply);
+  priceFilter.addEventListener("change", apply);
+  sort.addEventListener("change", apply);
+  inStock.addEventListener("change", apply);
+  toolbar.querySelector(".catalog-clear").addEventListener("click", () => {
+    search.value = "";
+    priceFilter.value = "all";
+    sort.value = "recommended";
+    inStock.checked = false;
+    apply();
+    search.focus();
+  });
+  document.addEventListener("modachange", apply);
+  document.addEventListener("modachange", () => customSelects.forEach((sync) => sync()));
+  apply();
+};
+
 document.addEventListener("DOMContentLoaded", async () => {
   await loadCatalog();
+  initCatalogTools();
   const navLinks = document.querySelectorAll(".site-header nav .nav-link");
   const currentFile = window.location.pathname.split("/").pop() || "index.html";
 
@@ -488,6 +635,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   const cartTotal = document.querySelector(".cart-total strong");
   const cartEmpty = document.querySelector(".cart-empty");
   const cartToast = document.querySelector(".cart-toast");
+  const addressLink = document.createElement("a");
+  addressLink.className = "cart-address-link";
+  addressLink.href = "./adres.html";
+  addressLink.textContent = "Teslimat adresi ekle →";
+  cartPanel.append(addressLink);
   const money = { format: formatStoreMoney };
 
   let cart = { items: [], itemCount: 0, total: 0 };
@@ -561,6 +713,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     cartTotal.textContent = money.format(Number(cart.total) || 0);
     cartEmpty.hidden = items.length > 0;
     cartItemsList.hidden = items.length === 0;
+    addressLink.hidden = items.length === 0;
   };
 
   const updateCart = async (path, options, successMessage) => {

@@ -83,12 +83,76 @@ const initAuthForm = () => {
         : "Başarılı! Mağazaya yönlendiriliyorsun…";
       setAuthFeedback(feedback, welcomeMessage, "success");
       window.setTimeout(() => {
-        window.location.assign("./index.html");
+        const nextPage = new URLSearchParams(window.location.search).get("next");
+        const safeNextPage = nextPage && /^[a-z0-9-]+\.html$/.test(nextPage) ? nextPage : "index.html";
+        window.location.assign(`./${safeNextPage}`);
       }, 700);
     } catch (error) {
       setAuthFeedback(feedback, error.message || "Sunucuya ulaşılamadı. Biraz sonra tekrar dene.", "error");
       submitButton.disabled = false;
       submitButton.classList.remove("is-loading");
+    }
+  });
+};
+
+const initPasswordRecovery = () => {
+  const requestForm = document.querySelector("#forgot-password-form");
+  if (requestForm) {
+    const feedback = requestForm.querySelector(".auth-feedback");
+    const submitButton = requestForm.querySelector(".auth-submit");
+    requestForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!requestForm.reportValidity()) return;
+      submitButton.disabled = true;
+      setAuthFeedback(feedback, "Bağlantı hazırlanıyor…", "loading");
+      try {
+        await requestAuth("/auth/password-reset/request", {
+          method: "POST",
+          body: JSON.stringify({ email: requestForm.elements.email.value }),
+        });
+        setAuthFeedback(feedback, "Eğer bu e-posta bir hesaba kayıtlıysa, yenileme bağlantısı gönderildi.", "success");
+      } catch (error) {
+        setAuthFeedback(feedback, error.message || "Şifre yenileme isteği gönderilemedi.", "error");
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+  }
+
+  const resetForm = document.querySelector("#reset-password-form");
+  if (!resetForm) return;
+  const feedback = resetForm.querySelector(".auth-feedback");
+  const submitButton = resetForm.querySelector(".auth-submit");
+  const token = new URLSearchParams(window.location.search).get("token");
+  if (token) window.history.replaceState(null, "", window.location.pathname);
+  if (!token) {
+    setAuthFeedback(feedback, "Şifre yenileme bağlantısı eksik veya geçersiz.", "error");
+    submitButton.disabled = true;
+    return;
+  }
+
+  resetForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!resetForm.reportValidity()) return;
+    const password = resetForm.elements.password.value;
+    if (password !== resetForm.elements.passwordConfirmation.value) {
+      setAuthFeedback(feedback, "Şifre alanları birbiriyle aynı olmalı.", "error");
+      resetForm.elements.passwordConfirmation.focus();
+      return;
+    }
+    submitButton.disabled = true;
+    setAuthFeedback(feedback, "Şifren güncelleniyor…", "loading");
+    try {
+      await requestAuth("/auth/password-reset/confirm", {
+        method: "POST",
+        body: JSON.stringify({ token, password }),
+      });
+      resetForm.reset();
+      setAuthFeedback(feedback, "Şifren güncellendi. Giriş sayfasına yönlendiriliyorsun…", "success");
+      window.setTimeout(() => window.location.assign("./giris.html"), 1300);
+    } catch (error) {
+      setAuthFeedback(feedback, error.message || "Şifre güncellenemedi.", "error");
+      submitButton.disabled = false;
     }
   });
 };
@@ -142,5 +206,6 @@ const initAccountLink = async () => {
 
 document.addEventListener("DOMContentLoaded", () => {
   initAuthForm();
+  initPasswordRecovery();
   initAccountLink();
 });

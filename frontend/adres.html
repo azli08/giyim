@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#fff8f5">
+  <title>Teslimat Adresi | MODA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body class="address-page">
+  <header class="auth-header address-header">
+    <a class="brand" href="./index.html" aria-label="MODA ana sayfa"><i class="bi bi-bag-heart" aria-hidden="true">♥</i><span>MODA</span></a>
+    <a class="auth-back-link" href="./index.html">← Mağazaya dön</a>
+  </header>
+
+  <main class="address-checkout">
+    <div class="address-heading">
+      <p class="address-eyebrow">♡ SİPARİŞİNİ TAMAMLA</p>
+      <h1>Teslimat adresin</h1>
+      <p>Miniklerin yeni favorileri doğru adrese ulaşsın.</p>
+      <ol class="checkout-steps" aria-label="Sipariş adımları">
+        <li class="is-current"><span>1</span> Adres</li>
+        <li><span>2</span> Ödeme</li>
+        <li><span>3</span> Onay</li>
+      </ol>
+    </div>
+
+    <div class="address-layout">
+      <section class="address-card" aria-labelledby="address-form-title">
+        <div class="address-card-title">
+          <span class="address-title-icon" aria-hidden="true">⌂</span>
+          <div><h2 id="address-form-title">Yeni adres ekle</h2><p>Alanları doldur, adresini hesabına kaydedelim.</p></div>
+        </div>
+        <div id="saved-addresses" class="saved-addresses" hidden>
+          <h3>Kaydedilmiş adreslerin</h3>
+          <ul id="saved-address-list"></ul>
+        </div>
+        <form id="address-form" class="address-form">
+          <label class="address-field"><span>Adres başlığı</span><input name="title" type="text" placeholder="Ev, İş gibi" maxlength="80" autocomplete="off" required></label>
+          <label class="address-field"><span>Ad soyad</span><input name="recipientName" type="text" placeholder="Teslim alacak kişinin adı" maxlength="160" autocomplete="name" required></label>
+          <label class="address-field"><span>Telefon</span><input name="phone" type="tel" placeholder="05XX XXX XX XX" maxlength="24" autocomplete="tel" required></label>
+          <label class="address-field"><span>İl</span><input name="city" type="text" placeholder="İstanbul" maxlength="100" autocomplete="address-level1" required></label>
+          <label class="address-field"><span>İlçe</span><input name="district" type="text" placeholder="Kadıköy" maxlength="100" autocomplete="address-level2" required></label>
+          <label class="address-field"><span>Posta kodu <small>(isteğe bağlı)</small></span><input name="postalCode" type="text" placeholder="34000" maxlength="20" autocomplete="postal-code"></label>
+          <label class="address-field address-field-wide"><span>Açık adres</span><textarea name="addressLine" rows="3" placeholder="Mahalle, sokak, bina ve daire bilgisi" maxlength="500" autocomplete="street-address" required></textarea></label>
+          <label class="address-default"><input name="isDefault" type="checkbox"><span class="address-checkmark" aria-hidden="true">♡</span><span>Varsayılan teslimat adresim olsun</span></label>
+          <p class="address-feedback" role="status" aria-live="polite"></p>
+          <button class="address-submit" type="submit"><span aria-hidden="true">♡</span> Adresi kaydet</button>
+        </form>
+      </section>
+
+      <aside class="address-summary" aria-labelledby="summary-title">
+        <h2 id="summary-title">Sepet özeti <span aria-hidden="true">✦</span></h2>
+        <ul id="address-order-items" class="address-order-items"><li>Sepet yükleniyor…</li></ul>
+        <div class="address-summary-total"><span>Ürünler toplamı</span><strong id="address-order-total">—</strong></div>
+        <p class="address-summary-note">Kargo ücreti sipariş aşamasında hesaplanır.</p>
+        <a class="address-continue-shopping" href="./index.html">Alışverişe devam et</a>
+      </aside>
+    </div>
+  </main>
+
+  <script src="./i18n.js"></script>
+  <script src="./auth.js"></script>
+  <script src="./adres.js"></script>
+</body>
+</html>
