@@ -10,6 +10,8 @@ const adminProductForm = document.querySelector("#admin-product-form");
 const adminProductFeedback = document.querySelector("#admin-product-feedback");
 const adminProductList = document.querySelector("#admin-product-list");
 const adminCategorySelect = document.querySelector("#admin-category");
+const adminCancelEdit = document.querySelector("#admin-cancel-edit");
+let editingProductId = null;
 
 async function adminRequest(path, options = {}) {
   const response = await fetch(`${adminApiBaseUrl}${path}`, {
@@ -54,9 +56,10 @@ function updateVariantRows() {
   });
 }
 
-function addVariantRow() {
+function addVariantRow(variant = null) {
   const row = document.createElement("fieldset");
   row.className = "admin-variant-form-row";
+  if (variant?.id) row.dataset.variantId = variant.id;
   row.innerHTML = `
     <legend></legend>
     <label>SKU<input data-field="sku" required minlength="2" maxlength="80" pattern="[A-Za-z0-9._-]+" placeholder="MINIK-KASIF-67"></label>
@@ -70,6 +73,11 @@ function addVariantRow() {
     row.remove();
     updateVariantRows();
   });
+  if (variant) {
+    for (const field of ["sku", "size", "color", "price", "stockQuantity"]) {
+      row.querySelector(`[data-field='${field}']`).value = variant[field];
+    }
+  }
   document.querySelector("#admin-variant-form-list").append(row);
   updateVariantRows();
 }
@@ -137,6 +145,48 @@ function createVariantRow(product, variant) {
   return row;
 }
 
+function startProductEdit(product) {
+  editingProductId = product.id;
+  adminProductForm.elements.name.value = product.name;
+  adminProductForm.elements.slug.value = product.slug;
+  adminProductForm.elements.slug.dataset.edited = "true";
+  adminProductForm.elements.categoryId.value = product.category_id || "";
+  adminProductForm.elements.description.value = product.description || "";
+  adminProductForm.elements.imageUrl.value = product.image?.url || "";
+  adminProductForm.elements.imageAlt.value = product.image?.alt || "";
+  adminProductForm.elements.isActive.checked = product.is_active;
+
+  document.querySelector("#admin-variant-form-list").replaceChildren();
+  for (const variant of product.variants) addVariantRow(variant);
+  if (product.variants.length === 0) addVariantRow();
+
+  adminProductForm.querySelector("button[type='submit']").textContent = "Değişiklikleri kaydet";
+  adminCancelEdit.hidden = false;
+  setAdminFeedback(adminProductFeedback, `${product.name} düzenleniyor.`);
+  adminProductForm.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function resetProductForm() {
+  editingProductId = null;
+  adminProductForm.reset();
+  adminProductForm.elements.slug.dataset.edited = "";
+  const rows = [...document.querySelectorAll(".admin-variant-form-row")];
+  rows.slice(1).forEach((row) => row.remove());
+  const firstRow = rows[0];
+  if (firstRow) {
+    delete firstRow.dataset.variantId;
+    firstRow.querySelectorAll("[data-field]").forEach((input) => {
+      input.value = input.dataset.field === "stockQuantity" ? "0" : "";
+    });
+  } else {
+    addVariantRow();
+  }
+  updateVariantRows();
+  adminProductForm.querySelector("button[type='submit']").textContent = "Ürünü kaydet";
+  adminCancelEdit.hidden = true;
+  setAdminFeedback(adminProductFeedback, "");
+}
+
 function createProductEntry(product) {
   const entry = document.createElement("article");
   entry.className = "admin-product-entry";
@@ -174,6 +224,31 @@ function createProductEntry(product) {
   status.textContent = product.is_active ? "Yayında" : "Pasif";
   summary.append(info, status);
   entry.append(summary);
+
+  const actions = document.createElement("div");
+  actions.className = "admin-product-actions";
+  const editButton = document.createElement("button");
+  editButton.type = "button";
+  editButton.textContent = "Ürünü düzenle";
+  editButton.addEventListener("click", () => startProductEdit(product));
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "admin-delete-product";
+  deleteButton.textContent = "Ürünü sil";
+  deleteButton.addEventListener("click", async () => {
+    if (!window.confirm(`“${product.name}” ürününü ve varyantlarını silmek istediğine emin misin?`)) return;
+    deleteButton.disabled = true;
+    try {
+      await adminRequest(`/admin/products/${product.id}`, { method: "DELETE" });
+      if (editingProductId === product.id) resetProductForm();
+      await loadProducts();
+    } catch (error) {
+      window.alert(error.message);
+      deleteButton.disabled = false;
+    }
+  });
+  actions.append(editButton, deleteButton);
+  entry.append(actions);
 
   const variants = document.createElement("div");
   variants.className = "admin-variant-list";
@@ -261,6 +336,7 @@ adminProductForm.addEventListener("submit", async (event) => {
   const submit = adminProductForm.querySelector("button[type='submit']");
   const values = Object.fromEntries(new FormData(adminProductForm));
   const variants = [...document.querySelectorAll(".admin-variant-form-row")].map((row) => ({
+    ...(row.dataset.variantId ? { id: Number(row.dataset.variantId) } : {}),
     sku: row.querySelector("[data-field='sku']").value,
     size: row.querySelector("[data-field='size']").value,
     color: row.querySelector("[data-field='color']").value,
@@ -270,22 +346,19 @@ adminProductForm.addEventListener("submit", async (event) => {
   const payload = {
     ...values,
     categoryId: Number(values.categoryId),
+    isActive: adminProductForm.elements.isActive.checked,
     variants,
   };
   submit.disabled = true;
-  setAdminFeedback(adminProductFeedback, "Ürün ve ilk varyant kaydediliyor…");
+  setAdminFeedback(adminProductFeedback, editingProductId ? "Ürün güncelleniyor…" : "Ürün ve varyantları kaydediliyor…");
   try {
-    await adminRequest("/admin/products", {
-      method: "POST",
+    await adminRequest(editingProductId ? `/admin/products/${editingProductId}` : "/admin/products", {
+      method: editingProductId ? "PUT" : "POST",
       body: JSON.stringify(payload),
     });
-    adminProductForm.reset();
-    document.querySelectorAll(".admin-variant-form-row").forEach((row, index) => {
-      if (index > 0) row.remove();
-    });
-    updateVariantRows();
-    adminProductForm.elements.slug.dataset.edited = "";
-    setAdminFeedback(adminProductFeedback, "Ürün mağaza kataloğuna eklendi.", "success");
+    const successMessage = editingProductId ? "Ürün bilgileri güncellendi." : "Ürün mağaza kataloğuna eklendi.";
+    resetProductForm();
+    setAdminFeedback(adminProductFeedback, successMessage, "success");
     await loadProducts();
   } catch (error) {
     setAdminFeedback(adminProductFeedback, error.message, "error");
@@ -295,7 +368,8 @@ adminProductForm.addEventListener("submit", async (event) => {
 });
 
 document.querySelector("#admin-refresh").addEventListener("click", loadProducts);
-document.querySelector("#admin-add-variant").addEventListener("click", addVariantRow);
+document.querySelector("#admin-add-variant").addEventListener("click", () => addVariantRow());
+adminCancelEdit.addEventListener("click", resetProductForm);
 document.querySelector("#admin-logout").addEventListener("click", async (event) => {
   event.currentTarget.disabled = true;
   try {

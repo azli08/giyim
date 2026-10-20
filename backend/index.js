@@ -421,6 +421,7 @@ app.post("/api/admin/products", requireAdmin, async (request, response) => {
     categoryId = null,
     imageUrl = "",
     imageAlt = "",
+    isActive = true,
     variants,
   } = request.body ?? {};
   const normalizedSlug = typeof slug === "string" ? slug.trim() : "";
@@ -445,6 +446,7 @@ app.post("/api/admin/products", requireAdmin, async (request, response) => {
     typeof description !== "string" || description.length > 5000 ||
     (categoryId !== null && (!Number.isSafeInteger(categoryId) || categoryId < 1)) ||
     !validImageUrl || typeof imageAlt !== "string" || imageAlt.length > 300 ||
+    typeof isActive !== "boolean" ||
     !validVariants
   ) {
     return response.status(400).json({ error: "Ürün ve ilk varyant alanlarını kontrol edin." });
@@ -454,10 +456,10 @@ app.post("/api/admin/products", requireAdmin, async (request, response) => {
   try {
     await client.query("BEGIN");
     const productResult = await client.query(
-      `INSERT INTO products (category_id, name, slug, description)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO products (category_id, name, slug, description, is_active)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id, name, slug, description, category_id`,
-      [categoryId, name.trim(), normalizedSlug, description.trim()]
+      [categoryId, name.trim(), normalizedSlug, description.trim(), isActive]
     );
     const product = productResult.rows[0];
 
@@ -495,6 +497,141 @@ app.post("/api/admin/products", requireAdmin, async (request, response) => {
     response.status(500).json({ error: "Ürün oluşturulamadı." });
   } finally {
     client.release();
+  }
+});
+
+app.put("/api/admin/products/:productId", requireAdmin, async (request, response) => {
+  const productId = request.params.productId;
+  const {
+    name,
+    slug,
+    description = "",
+    categoryId = null,
+    imageUrl = "",
+    imageAlt = "",
+    isActive = true,
+    variants,
+  } = request.body ?? {};
+  const normalizedSlug = typeof slug === "string" ? slug.trim() : "";
+  const normalizedImageUrl = typeof imageUrl === "string" ? imageUrl.trim() : "";
+  const validImageUrl =
+    !normalizedImageUrl ||
+    /^https?:\/\//i.test(normalizedImageUrl) ||
+    (/^\/(?!\/)/.test(normalizedImageUrl) && !normalizedImageUrl.includes("\\"));
+  const validVariants = Array.isArray(variants) && variants.length > 0 && variants.length <= 30 &&
+    variants.every((variant) =>
+      variant &&
+      (variant.id === undefined || (Number.isSafeInteger(variant.id) && variant.id > 0)) &&
+      typeof variant.sku === "string" && /^[A-Za-z0-9._-]{2,80}$/.test(variant.sku.trim()) &&
+      typeof variant.size === "string" && variant.size.trim().length > 0 && variant.size.trim().length <= 40 &&
+      typeof variant.color === "string" && variant.color.trim().length > 0 && variant.color.trim().length <= 80 &&
+      typeof variant.price === "string" && /^\d{1,10}(\.\d{1,2})?$/.test(variant.price) &&
+      Number.isSafeInteger(variant.stockQuantity) && variant.stockQuantity >= 0 && variant.stockQuantity <= 2147483647
+    );
+
+  if (
+    !/^[1-9]\d*$/.test(productId) ||
+    typeof name !== "string" || !name.trim() || name.trim().length > 160 ||
+    !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalizedSlug) ||
+    typeof description !== "string" || description.length > 5000 ||
+    (categoryId !== null && (!Number.isSafeInteger(categoryId) || categoryId < 1)) ||
+    !validImageUrl || typeof imageAlt !== "string" || imageAlt.length > 300 ||
+    typeof isActive !== "boolean" || !validVariants
+  ) {
+    return response.status(400).json({ error: "Ürün ve varyant alanlarını kontrol edin." });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const updatedProduct = await client.query(
+      `UPDATE products
+       SET category_id = $1, name = $2, slug = $3, description = $4,
+           is_active = $5, updated_at = NOW()
+       WHERE id = $6
+       RETURNING id`,
+      [categoryId, name.trim(), normalizedSlug, description.trim(), isActive, productId]
+    );
+    if (updatedProduct.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return response.status(404).json({ error: "Ürün bulunamadı." });
+    }
+
+    await client.query(
+      "UPDATE product_variants SET is_active = FALSE WHERE product_id = $1 AND is_active = TRUE",
+      [productId]
+    );
+    for (const variant of variants) {
+      if (variant.id) {
+        const updatedVariant = await client.query(
+          `UPDATE product_variants
+           SET sku = $1, size = $2, color = $3, price = $4,
+               stock_quantity = $5, is_active = TRUE
+           WHERE id = $6 AND product_id = $7
+           RETURNING id`,
+          [variant.sku.trim(), variant.size.trim(), variant.color.trim(), variant.price,
+            variant.stockQuantity, variant.id, productId]
+        );
+        if (updatedVariant.rowCount === 0) {
+          const error = new Error("Ürün varyantlarından biri artık mevcut değil.");
+          error.code = "ADMIN_VARIANT_NOT_FOUND";
+          throw error;
+        }
+      } else {
+        await client.query(
+          `INSERT INTO product_variants
+             (product_id, sku, size, color, price, stock_quantity)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [productId, variant.sku.trim(), variant.size.trim(), variant.color.trim(),
+            variant.price, variant.stockQuantity]
+        );
+      }
+    }
+
+    await client.query("DELETE FROM product_images WHERE product_id = $1", [productId]);
+    if (normalizedImageUrl) {
+      await client.query(
+        `INSERT INTO product_images (product_id, image_url, alt_text)
+         VALUES ($1, $2, $3)`,
+        [productId, normalizedImageUrl, imageAlt.trim()]
+      );
+    }
+    await client.query("COMMIT");
+    response.json({ message: "Ürün güncellendi." });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    if (error.code === "23505") {
+      return response.status(409).json({ error: "Ürün slug veya SKU zaten kullanılıyor." });
+    }
+    if (error.code === "23503") {
+      return response.status(400).json({ error: "Seçilen kategori bulunamadı." });
+    }
+    if (error.code === "ADMIN_VARIANT_NOT_FOUND") {
+      return response.status(409).json({ error: error.message });
+    }
+    console.error("Yönetim ürünü güncellenemedi:", error);
+    response.status(500).json({ error: "Ürün güncellenemedi." });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete("/api/admin/products/:productId", requireAdmin, async (request, response) => {
+  if (!/^[1-9]\d*$/.test(request.params.productId)) {
+    return response.status(400).json({ error: "Geçerli bir ürün kimliği gerekli." });
+  }
+  try {
+    const result = await pool.query(
+      "DELETE FROM products WHERE id = $1 RETURNING id",
+      [request.params.productId]
+    );
+    if (result.rowCount === 0) {
+      return response.status(404).json({ error: "Ürün bulunamadı." });
+    }
+    response.json({ message: "Ürün ve ona bağlı varyantlar silindi." });
+  } catch (error) {
+    console.error("Yönetim ürünü silinemedi:", error);
+    response.status(500).json({ error: "Ürün silinemedi." });
   }
 });
 
