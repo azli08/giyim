@@ -2,6 +2,8 @@ const storefrontLocalApiHost = ["localhost", "127.0.0.1"].includes(window.locati
   ? window.location.hostname
   : "localhost";
 const apiBaseUrl = (window.MODA_API_URL || `http://${storefrontLocalApiHost}:3000/api`).replace(/\/$/, "");
+const formatStoreMoney = (value) => window.MODA_I18N?.money(value)
+  || new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" }).format(Number(value) || 0);
 
 const requestStorefrontApi = async (path, options = {}, fallbackMessage = "İstek tamamlanamadı.") => {
   const response = await fetch(`${apiBaseUrl}${path}`, {
@@ -47,10 +49,7 @@ const createProductCard = (product) => {
   const price = document.createElement("p");
   price.className = "product-price";
   price.textContent = availablePrices.length
-    ? new Intl.NumberFormat("tr-TR", {
-      style: "currency",
-      currency: "TRY",
-    }).format(Math.min(...availablePrices))
+    ? formatStoreMoney(Math.min(...availablePrices))
     : "Stokta yok";
   const sizeLabel = document.createElement("p");
   sizeLabel.className = "size-label";
@@ -258,10 +257,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const name = document.createElement("strong");
       name.textContent = favorite.name;
       const price = document.createElement("small");
-      price.textContent = new Intl.NumberFormat("tr-TR", {
-        style: "currency",
-        currency: "TRY",
-      }).format(Number(favorite.price) || 0);
+      price.textContent = formatStoreMoney(favorite.price);
       info.append(name, price);
       const remove = document.createElement("button");
       remove.className = "favorite-remove";
@@ -492,7 +488,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const cartTotal = document.querySelector(".cart-total strong");
   const cartEmpty = document.querySelector(".cart-empty");
   const cartToast = document.querySelector(".cart-toast");
-  const money = new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" });
+  const money = { format: formatStoreMoney };
 
   let cart = { items: [], itemCount: 0, total: 0 };
   let cartMutationPending = false;
@@ -660,4 +656,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   renderCart();
+  document.addEventListener("modachange", () => {
+    document.querySelectorAll(".product-card[data-price]").forEach((card) => {
+      const price = card.querySelector(".product-price");
+      if (price && !price.querySelector("del")) price.textContent = formatStoreMoney(card.dataset.price);
+    });
+    renderFavorites();
+    renderCart();
+  });
 });
