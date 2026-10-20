@@ -358,10 +358,10 @@ document.addEventListener("DOMContentLoaded", async () => {
           observer.unobserve(entry.target);
         }
       });
-    }, { threshold: 0.15 });
+    }, { threshold: 0.05, rootMargin: "24px 0px" });
 
     cards.forEach((card, index) => {
-      card.style.transitionDelay = `${index * 120}ms`;
+      card.style.transitionDelay = `${Math.min(index * 45, 135)}ms`;
       cardObserver.observe(card);
     });
   }

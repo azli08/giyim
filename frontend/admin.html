@@ -58,14 +58,15 @@
             </div>
             <label>Ürün görseli bağlantısı <span class="admin-optional">(isteğe bağlı)</span><input name="imageUrl" type="text" maxlength="1000" placeholder="https://… veya /images/urun.jpg"></label>
             <label>Görsel açıklaması<input name="imageAlt" maxlength="300" placeholder="Ürünün kısa görsel açıklaması"></label>
-            <button class="admin-button admin-button-primary" type="submit">Ürünü kaydet <span aria-hidden="true">→</span></button>
+            <label class="admin-active-field"><input name="isActive" type="checkbox" checked> Ürün mağazada yayında</label>
+            <div class="admin-form-actions"><button class="admin-button admin-button-primary" type="submit">Ürünü kaydet <span aria-hidden="true">→</span></button><button class="admin-button admin-button-secondary" id="admin-cancel-edit" type="button" hidden>Düzenlemeyi iptal et</button></div>
             <p class="admin-feedback" id="admin-product-feedback" role="status" aria-live="polite"></p>
           </form>
         </section>
 
         <section class="admin-card admin-inventory-card" aria-labelledby="admin-inventory-title">
-          <div class="admin-section-heading"><div><p class="admin-kicker">KATALOG</p><h2 id="admin-inventory-title">Ürünler ve stok</h2></div><button class="admin-refresh" id="admin-refresh" type="button" aria-label="Ürün listesini yenile">↻</button></div>
-          <p class="admin-list-hint">Stok sayısını değiştirmek için varyantın yanındaki değeri güncelle.</p>
+          <div class="admin-section-heading"><div><p class="admin-kicker">KATALOG</p><h2 id="admin-inventory-title">Ürün yönetimi</h2></div><button class="admin-refresh" id="admin-refresh" type="button" aria-label="Ürün listesini yenile">↻</button></div>
+          <p class="admin-list-hint">Ürün bilgilerini ve varyantlarını düzenleyebilir, ürünü silebilirsin.</p>
           <div class="admin-product-list" id="admin-product-list" aria-live="polite"><p class="admin-empty">Ürünler yükleniyor…</p></div>
         </section>
       </div>
