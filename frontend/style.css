@@ -1479,9 +1479,9 @@ html {
 .address-field-wide { grid-column: 1 / -1; }
 .address-default { display: flex; grid-column: 1 / -1; align-items: center; gap: 9px; color: #76535f; font-size: .84rem; font-weight: 800; cursor: pointer; }
 .address-default input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-.address-checkmark { display: grid; width: 24px; height: 24px; place-items: center; border: 1px solid #e8cbd3; border-radius: 8px; background: #fff; color: #c67b91; }
-.address-default input:checked + .address-checkmark { background: #fff0f4; }
-.address-default input:checked + .address-checkmark::after { content: "♥"; }
+.address-checkmark { position: relative; display: grid; width: 24px; height: 24px; place-items: center; border: 1px solid #e8cbd3; border-radius: 8px; background: #fff; color: #c67b91; }
+.address-default input:checked + .address-checkmark { background: #fff0f4; color: transparent; }
+.address-default input:checked + .address-checkmark::after { position: absolute; inset: 0; display: grid; place-items: center; color: #c67b91; content: "♥"; line-height: 1; }
 .address-default input:focus-visible + .address-checkmark { outline: 3px solid rgb(200 138 120 / 30%); outline-offset: 2px; }
 .address-feedback { grid-column: 1 / -1; margin: 0; color: #a4526a; font-size: .84rem; font-weight: 700; }
 .address-feedback:empty { display: none; }

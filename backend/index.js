@@ -822,11 +822,19 @@ app.post("/api/addresses", requireAuth, async (request, response) => {
   const values = Object.fromEntries(fields.map((field) => [field, typeof body[field] === "string" ? body[field].trim() : ""]));
   const maxLengths = { title: 80, recipientName: 160, phone: 24, city: 100, district: 100, addressLine: 500 };
   const postalCode = typeof body.postalCode === "string" ? body.postalCode.trim() : "";
-  if (fields.some((field) => !values[field]) || fields.some((field) => values[field].length > maxLengths[field]) || postalCode.length > 20) {
+  if (fields.some((field) => !values[field]) || fields.some((field) => values[field].length > maxLengths[field])) {
     return response.status(400).json({ error: "Lütfen zorunlu alanları doğru şekilde doldurun." });
   }
-  if (values.phone.length < 7 || !/^[+()\d\s.-]+$/.test(values.phone)) {
-    return response.status(400).json({ error: "Geçerli bir telefon numarası girin." });
+  if (postalCode && !/^\d{5}$/.test(postalCode)) {
+    return response.status(400).json({ error: "Posta kodu 5 rakamdan oluşmalı." });
+  }
+  const phoneDigitCount = (values.phone.match(/\d/g) || []).length;
+  const phoneDigits = values.phone.replace(/\D/g, "");
+  const validTurkishPhone = phoneDigitCount === 10
+    || (phoneDigitCount === 11 && phoneDigits.startsWith("0"))
+    || (phoneDigitCount === 12 && phoneDigits.startsWith("90"));
+  if (!validTurkishPhone || !/^[+()\d\s.-]+$/.test(values.phone)) {
+    return response.status(400).json({ error: "Türkiye için geçerli bir telefon numarası girin." });
   }
 
   const client = await pool.connect();
