@@ -1496,6 +1496,21 @@ html {
 .saved-addresses ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .saved-addresses li { padding: 9px 11px; border-radius: 10px; background: #fff5f7; color: #76535f; font-size: .8rem; line-height: 1.55; }
 .saved-addresses li strong { color: #a4526a; }
+.saved-addresses li p { margin: 5px 0 9px; }
+.saved-address-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.saved-address-actions button, .address-cancel-edit { padding: 7px 10px; border: 1px solid #ead3da; border-radius: 9px; background: #fff; color: #8d4d62; font: 800 .75rem "Nunito", sans-serif; cursor: pointer; }
+.saved-address-actions button:hover, .address-cancel-edit:hover { background: #fff0f4; }
+.saved-address-actions button.is-danger { color: #a33e52; }
+.address-cancel-edit { grid-column: 1 / -1; min-height: 42px; }
+.address-cancel-edit[hidden] { display: none; }
+.payment-notice-page { width: min(100% - 40px, 760px); margin: 36px auto 72px; }
+.payment-notice-page .checkout-steps { margin-bottom: 25px; }
+.payment-notice { padding: clamp(26px, 6vw, 52px); border: 1px solid #f0dfe3; border-radius: 24px; background: linear-gradient(145deg, #fff 0%, #fff8fa 100%); box-shadow: 0 14px 36px rgb(73 52 59 / 8%); text-align: center; }
+.payment-notice-icon { display: grid; width: 62px; height: 62px; margin: 0 auto 17px; place-items: center; border-radius: 20px; background: #fff0f4; color: #bd6a82; font-size: 2rem; }
+.payment-notice h1 { margin: 0; color: #49343b; font: 400 clamp(1.8rem, 5vw, 2.5rem) "DM Serif Display", Georgia, serif; }
+.payment-notice > p:not(.address-eyebrow) { max-width: 540px; margin: 14px auto 24px; color: #806d73; line-height: 1.75; }
+.payment-back-link { min-width: 220px; text-decoration: none; }
+.payment-back-link:hover { color: #fff; }
 .address-summary { position: sticky; top: 18px; padding: 21px; }
 .address-summary h2 { display: flex; align-items: center; justify-content: space-between; margin: 0 0 14px; color: #654454; font-size: 1.08rem; }
 .address-summary h2 span { color: #d994a5; }
@@ -1505,7 +1520,13 @@ html {
 .address-summary-total { display: flex; justify-content: space-between; gap: 12px; margin-top: 15px; color: #6d505b; font-size: .88rem; }
 .address-summary-total strong { color: #9f4c66; }
 .address-summary-note { margin: 10px 0 0; color: #9a858d; font-size: .76rem; line-height: 1.5; }
-.address-continue-shopping { display: block; margin-top: 17px; color: #a4526a; font-size: .83rem; font-weight: 800; text-align: center; text-decoration: none; }
+.address-summary-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 18px; }
+.address-summary-button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 9px 12px; border: 1px solid #e8cbd3; border-radius: 12px; background: #fff; color: #9b4e65; font-size: .79rem; font-weight: 900; text-align: center; text-decoration: none; transition: transform .18s ease, box-shadow .18s ease, background .18s ease; }
+.address-summary-button:hover { transform: translateY(-1px); background: #fff4f6; box-shadow: 0 5px 12px rgb(73 52 59 / 8%); }
+.address-summary-payment { border-color: transparent; background: linear-gradient(110deg, #c65f78, #dc8792); color: #fff; }
+.address-summary-payment:hover { background: linear-gradient(110deg, #b9516c, #d87987); color: #fff; }
+.address-summary-button[hidden] { display: none; }
+.address-continue-shopping { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; margin-top: 20px; padding: 9px 16px; border: 1px solid #e8cbd3; border-radius: 12px; background: #fff; color: #9b4e65; font-size: .83rem; font-weight: 800; text-align: center; text-decoration: none; }
 .address-continue-shopping:hover { text-decoration: underline; }
 .cart-address-link { display: block; margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: linear-gradient(110deg, #c65f78, #dc8792); color: white; font-size: .84rem; font-weight: 900; text-align: center; text-decoration: none; }
 .cart-address-link[hidden] { display: none; }

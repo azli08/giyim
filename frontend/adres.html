@@ -34,6 +34,10 @@
           <span class="address-title-icon" aria-hidden="true">⌂</span>
           <div><h2 id="address-form-title">Yeni adres ekle</h2><p>Alanları doldur, adresini hesabına kaydedelim.</p></div>
         </div>
+        <p id="email-verification-required" class="address-feedback" role="status" aria-live="polite" hidden>
+          Sipariş verebilmek için önce e-posta adresini doğrulaman gerekiyor.
+          <a href="./email-dogrulama-gonder.html">Yeni doğrulama bağlantısı iste</a>.
+        </p>
         <div id="saved-addresses" class="saved-addresses" hidden>
           <h3>Kaydedilmiş adreslerin</h3>
           <ul id="saved-address-list"></ul>
@@ -48,7 +52,8 @@
           <label class="address-field address-field-wide"><span>Açık adres</span><textarea name="addressLine" rows="3" placeholder="Mahalle, sokak, bina ve daire bilgisi" maxlength="500" autocomplete="street-address" required></textarea></label>
           <label class="address-default"><input name="isDefault" type="checkbox"><span class="address-checkmark" aria-hidden="true">♡</span><span>Varsayılan teslimat adresim olsun</span></label>
           <p class="address-feedback" role="status" aria-live="polite"></p>
-          <button class="address-submit" type="submit"><span aria-hidden="true">♡</span> Adresi kaydet</button>
+          <button class="address-submit" type="submit"><span aria-hidden="true">♡</span> <span id="address-submit-label">Adresi kaydet</span></button>
+          <button id="cancel-address-edit" class="address-cancel-edit" type="button" hidden>Düzenlemeyi iptal et</button>
         </form>
       </section>
 
@@ -57,7 +62,10 @@
         <ul id="address-order-items" class="address-order-items"><li>Sepet yükleniyor…</li></ul>
         <div class="address-summary-total"><span>Ürünler toplamı</span><strong id="address-order-total">—</strong></div>
         <p class="address-summary-note">Kargo ücreti sipariş aşamasında hesaplanır.</p>
-        <a class="address-continue-shopping" href="./index.html">Alışverişe devam et</a>
+        <div class="address-summary-actions">
+          <a class="address-summary-button address-summary-shopping" href="./index.html">Alışverişe devam et</a>
+          <a id="continue-to-payment" class="address-summary-button address-summary-payment" href="./odeme.html" hidden>Ödemeye geç →</a>
+        </div>
       </aside>
     </div>
   </main>

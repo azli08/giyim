@@ -28,7 +28,7 @@ app.use((request, response, next) => {
   if (origin && isAllowedOrigin(origin)) {
     response.set("Access-Control-Allow-Origin", origin);
     response.set("Vary", "Origin");
-    response.set("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
+    response.set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
     response.set("Access-Control-Allow-Headers", "Content-Type");
     response.set("Access-Control-Allow-Credentials", "true");
   }
@@ -89,7 +89,7 @@ const verifyPassword = async (password, storedHash) => {
   return actualKey.length === expectedKey.length && timingSafeEqual(actualKey, expectedKey);
 };
 
-const sendPasswordResetEmail = async (email, resetUrl) => {
+const sendResendEmail = async ({ email, subject, text, html }) => {
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -99,12 +99,45 @@ const sendPasswordResetEmail = async (email, resetUrl) => {
     body: JSON.stringify({
       from: process.env.RESET_EMAIL_FROM,
       to: [email],
-      subject: "MODA hesabınız için şifre yenileme bağlantısı",
-      text: `Şifrenizi yenilemek için bu bağlantıyı açın (30 dakika geçerlidir): ${resetUrl}`,
-      html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:32px;color:#49343b"><h1>Şifrenizi yenileyin</h1><p>MODA hesabınız için şifre yenileme isteği aldık. Bağlantı 30 dakika geçerlidir.</p><p><a href="${resetUrl}" style="display:inline-block;padding:12px 20px;border-radius:24px;background:#b9576b;color:#fff;text-decoration:none">Yeni şifre belirle</a></p><p>Bu isteği siz yapmadıysanız bu e-postayı yok sayabilirsiniz.</p></div>`,
+      subject,
+      text,
+      html,
     }),
   });
+  if (!response.ok) {
+    const providerError = await response.json().catch(() => ({}));
+    console.error("Resend e-posta isteğini reddetti:", JSON.stringify({
+      status: response.status,
+      name: providerError.name,
+      message: providerError.message,
+    }));
+  }
   return response.ok;
+};
+
+const sendPasswordResetEmail = (email, resetUrl) => sendResendEmail({
+  email,
+  subject: "MODA hesabınız için şifre yenileme bağlantısı",
+  text: `Şifrenizi yenilemek için bu bağlantıyı açın (30 dakika geçerlidir): ${resetUrl}`,
+  html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:32px;color:#49343b"><h1>Şifrenizi yenileyin</h1><p>MODA hesabınız için şifre yenileme isteği aldık. Bağlantı 30 dakika geçerlidir.</p><p><a href="${resetUrl}" style="display:inline-block;padding:12px 20px;border-radius:24px;background:#b9576b;color:#fff;text-decoration:none">Yeni şifre belirle</a></p><p>Bu isteği siz yapmadıysanız bu e-postayı yok sayabilirsiniz.</p></div>`,
+});
+
+const sendEmailVerification = (email, verificationUrl) => sendResendEmail({
+  email,
+  subject: "E-posta adresinizi doğrulayın | MODA",
+  text: `MODA hesabınızı etkinleştirmek için bu bağlantıyı açın (24 saat geçerlidir): ${verificationUrl}`,
+  html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:32px;color:#49343b"><h1>E-posta adresinizi doğrulayın</h1><p>MODA hesabınızı etkinleştirmek için aşağıdaki bağlantıyı açın. Bağlantı 24 saat geçerlidir.</p><p><a href="${verificationUrl}" style="display:inline-block;padding:12px 20px;border-radius:24px;background:#b9576b;color:#fff;text-decoration:none">E-postamı doğrula</a></p><p>Bu hesabı siz oluşturmadıysanız bu e-postayı yok sayabilirsiniz.</p></div>`,
+});
+
+const emailVerificationUrl = () => {
+  if (!process.env.RESET_EMAIL_API_KEY || !process.env.RESET_EMAIL_FROM || !process.env.EMAIL_VERIFICATION_URL) return null;
+  try {
+    const url = new URL(process.env.EMAIL_VERIFICATION_URL);
+    if (process.env.NODE_ENV === "production" && url.protocol !== "https:") return null;
+    return url;
+  } catch {
+    return null;
+  }
 };
 
 const publicUser = (user) => ({
@@ -113,6 +146,7 @@ const publicUser = (user) => ({
   firstName: user.first_name,
   lastName: user.last_name,
   isAdmin: user.role === "admin",
+  emailVerified: Boolean(user.email_verified),
 });
 
 const createUserSession = async (database, userId) => {
@@ -137,7 +171,7 @@ const requireAuth = async (request, response, next) => {
 
   try {
     const result = await pool.query(
-      `SELECT u.id, u.email, u.first_name, u.last_name, u.role, s.token_hash
+      `SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.email_verified, s.token_hash
        FROM user_sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = $1 AND s.expires_at > NOW()`,
@@ -168,6 +202,16 @@ const requireAdmin = (request, response, next) => {
     }
     next();
   });
+};
+
+const requireVerifiedEmail = (request, response, next) => {
+  if (!request.auth.user.email_verified) {
+    return response.status(403).json({
+      error: "Sipariş verebilmek için e-posta adresini doğrulaman gerekiyor.",
+      code: "EMAIL_UNVERIFIED",
+    });
+  }
+  next();
 };
 
 const getOrCreateCartId = async (database, userId) => {
@@ -287,26 +331,35 @@ app.post("/api/auth/register", async (request, response) => {
     });
   }
 
+  const verificationBaseUrl = emailVerificationUrl();
+
   let client;
+  let tokenHash;
+  let verificationToken;
+  let user;
   try {
     const passwordHash = await hashPassword(password);
     client = await pool.connect();
     await client.query("BEGIN");
 
     const result = await client.query(
-      `INSERT INTO users (email, password_hash, first_name, last_name)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO users (email, password_hash, first_name, last_name, email_verified)
+       VALUES ($1, $2, $3, $4, FALSE)
        RETURNING id, email, first_name, last_name`,
       [normalizedEmail, passwordHash, normalizedFirstName, normalizedLastName]
     );
-    const user = result.rows[0];
+    user = result.rows[0];
     await getOrCreateCartId(client, user.id);
-    const token = await createUserSession(client, user.id);
-    await client.query("DELETE FROM user_sessions WHERE expires_at <= NOW()");
+    if (verificationBaseUrl) {
+      verificationToken = randomBytes(32).toString("base64url");
+      tokenHash = hashSessionToken(verificationToken);
+      await client.query(
+        `INSERT INTO email_verification_tokens (token_hash, user_id, expires_at)
+         VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
+        [tokenHash, user.id]
+      );
+    }
     await client.query("COMMIT");
-
-    setSessionCookie(response, token);
-    response.status(201).json({ user: publicUser(user) });
   } catch (error) {
     if (client) await client.query("ROLLBACK").catch(() => {});
     if (error.code === "23505") {
@@ -314,9 +367,126 @@ app.post("/api/auth/register", async (request, response) => {
     }
 
     console.error("Kullanıcı kaydı başarısız:", error);
-    response.status(500).json({ error: "Sunucu hatası" });
+    return response.status(500).json({ error: "Sunucu hatası" });
   } finally {
     client?.release();
+  }
+
+  if (verificationBaseUrl && verificationToken) {
+    verificationBaseUrl.searchParams.set("token", verificationToken);
+    try {
+      const emailSent = await sendEmailVerification(normalizedEmail, verificationBaseUrl.toString());
+      if (!emailSent) {
+        await pool.query("UPDATE email_verification_tokens SET used_at = NOW() WHERE token_hash = $1", [tokenHash]);
+      }
+    } catch (error) {
+      console.error("E-posta doğrulama mesajı gönderilemedi:", error.message);
+      await pool.query("UPDATE email_verification_tokens SET used_at = NOW() WHERE token_hash = $1", [tokenHash]).catch(() => {});
+    }
+  }
+  response.status(201).json({
+    message: "Hesabın oluşturuldu. E-posta ve şifrenle giriş yapabilirsin. Sipariş vermek ve şifreni sıfırlamak için e-posta doğrulaması gerekir.",
+  });
+});
+
+app.post("/api/auth/email-verification/request", async (request, response) => {
+  const email = typeof request.body?.email === "string"
+    ? request.body.email.trim().toLowerCase()
+    : "";
+  if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return response.status(400).json({ error: "Geçerli bir e-posta adresi girin." });
+  }
+
+  const verificationBaseUrl = emailVerificationUrl();
+  if (!verificationBaseUrl) {
+    return response.status(503).json({ error: "E-posta doğrulama servisi şu anda kullanılamıyor." });
+  }
+
+  try {
+    const userResult = await pool.query(
+      "SELECT id FROM users WHERE email = $1 AND email_verified = FALSE",
+      [email]
+    );
+    if (userResult.rows.length === 0) {
+      return response.json({ message: "Hesabınız varsa yeni doğrulama bağlantısı gönderildi." });
+    }
+
+    const userId = userResult.rows[0].id;
+    await pool.query("DELETE FROM email_verification_tokens WHERE created_at < NOW() - INTERVAL '1 day'");
+    const recentRequests = await pool.query(
+      `SELECT COUNT(*)::integer AS count FROM email_verification_tokens
+       WHERE user_id = $1 AND created_at > NOW() - INTERVAL '15 minutes'`,
+      [userId]
+    );
+    if (recentRequests.rows[0].count >= 3) {
+      return response.json({ message: "Hesabınız varsa yeni doğrulama bağlantısı gönderildi." });
+    }
+
+    const token = randomBytes(32).toString("base64url");
+    const tokenHash = hashSessionToken(token);
+    await pool.query(
+      "UPDATE email_verification_tokens SET used_at = NOW() WHERE user_id = $1 AND used_at IS NULL",
+      [userId]
+    );
+    await pool.query(
+      `INSERT INTO email_verification_tokens (token_hash, user_id, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
+      [tokenHash, userId]
+    );
+    verificationBaseUrl.searchParams.set("token", token);
+    const emailSent = await sendEmailVerification(email, verificationBaseUrl.toString());
+    if (!emailSent) {
+      await pool.query("UPDATE email_verification_tokens SET used_at = NOW() WHERE token_hash = $1", [tokenHash]);
+      console.error("E-posta doğrulama sağlayıcısı isteği kabul etmedi.");
+    }
+    response.json({ message: "Hesabınız varsa yeni doğrulama bağlantısı gönderildi." });
+  } catch (error) {
+    console.error("Yeni doğrulama bağlantısı oluşturulamadı:", error.message);
+    response.status(500).json({ error: "İşlem tamamlanamadı. Lütfen daha sonra tekrar deneyin." });
+  }
+});
+
+app.post("/api/auth/email-verification/confirm", async (request, response) => {
+  const { token } = request.body ?? {};
+  if (typeof token !== "string" || !/^[A-Za-z0-9_-]{40,50}$/.test(token)) {
+    return response.status(400).json({ error: "Doğrulama bağlantısı geçersiz veya süresi dolmuş." });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const tokenHash = hashSessionToken(token);
+    const verification = await client.query(
+      `SELECT user_id FROM email_verification_tokens
+       WHERE token_hash = $1 AND expires_at > NOW() AND used_at IS NULL
+       FOR UPDATE`,
+      [tokenHash]
+    );
+    if (verification.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return response.status(400).json({ error: "Doğrulama bağlantısı geçersiz veya süresi dolmuş." });
+    }
+
+    const userId = verification.rows[0].user_id;
+    const userResult = await client.query(
+      "UPDATE users SET email_verified = TRUE WHERE id = $1 RETURNING id, email, first_name, last_name, role, email_verified",
+      [userId]
+    );
+    await client.query("UPDATE email_verification_tokens SET used_at = NOW() WHERE token_hash = $1", [tokenHash]);
+    await client.query(
+      "UPDATE email_verification_tokens SET used_at = NOW() WHERE user_id = $1 AND used_at IS NULL",
+      [userId]
+    );
+    const sessionToken = await createUserSession(client, userId);
+    await client.query("COMMIT");
+    setSessionCookie(response, sessionToken);
+    response.json({ user: publicUser(userResult.rows[0]) });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("E-posta adresi doğrulanamadı:", error.message);
+    response.status(500).json({ error: "İşlem tamamlanamadı. Lütfen daha sonra tekrar deneyin." });
+  } finally {
+    client.release();
   }
 });
 
@@ -336,7 +506,7 @@ app.post("/api/auth/login", async (request, response) => {
 
   try {
     const result = await pool.query(
-      `SELECT id, email, password_hash, first_name, last_name, role
+      `SELECT id, email, password_hash, first_name, last_name, role, email_verified
        FROM users
        WHERE email = $1`,
       [normalizedEmail]
@@ -346,7 +516,6 @@ app.post("/api/auth/login", async (request, response) => {
     if (!user || !(await verifyPassword(password, user.password_hash))) {
       return response.status(401).json({ error: "E-posta veya parola hatalı." });
     }
-
     await getOrCreateCartId(pool, user.id);
     const token = await createUserSession(pool, user.id);
     await pool.query("DELETE FROM user_sessions WHERE expires_at <= NOW()");
@@ -405,7 +574,10 @@ app.post("/api/auth/password-reset/request", async (request, response) => {
   }
 
   try {
-    const userResult = await pool.query("SELECT id FROM users WHERE email = $1", [email]);
+    const userResult = await pool.query(
+      "SELECT id FROM users WHERE email = $1 AND email_verified = TRUE",
+      [email]
+    );
     if (userResult.rows.length === 0) {
       return response.json({ message: "Hesabınız varsa, şifre yenileme bağlantısı e-posta adresinize gönderildi." });
     }
@@ -798,7 +970,7 @@ app.get("/api/cart", requireAuth, async (request, response) => {
   }
 });
 
-app.get("/api/addresses", requireAuth, async (request, response) => {
+app.get("/api/addresses", requireAuth, requireVerifiedEmail, async (request, response) => {
   try {
     const result = await pool.query(
       `SELECT id, title, recipient_name AS "recipientName", phone, country,
@@ -816,7 +988,7 @@ app.get("/api/addresses", requireAuth, async (request, response) => {
   }
 });
 
-app.post("/api/addresses", requireAuth, async (request, response) => {
+app.post("/api/addresses", requireAuth, requireVerifiedEmail, async (request, response) => {
   const body = request.body ?? {};
   const fields = ["title", "recipientName", "phone", "city", "district", "addressLine"];
   const values = Object.fromEntries(fields.map((field) => [field, typeof body[field] === "string" ? body[field].trim() : ""]));
@@ -852,6 +1024,54 @@ app.post("/api/addresses", requireAuth, async (request, response) => {
     response.status(500).json({ error: "Adres kaydedilemedi." });
   } finally {
     client.release();
+  }
+});
+
+app.put("/api/addresses/:id", requireAuth, requireVerifiedEmail, async (request, response) => {
+  const id = Number(request.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return response.status(400).json({ error: "Geçersiz adres." });
+  const body = request.body ?? {};
+  const fields = ["title", "recipientName", "phone", "city", "district", "addressLine"];
+  const values = Object.fromEntries(fields.map((field) => [field, typeof body[field] === "string" ? body[field].trim() : ""]));
+  const maxLengths = { title: 80, recipientName: 160, phone: 24, city: 100, district: 100, addressLine: 500 };
+  const postalCode = typeof body.postalCode === "string" ? body.postalCode.trim() : "";
+  if (fields.some((field) => !values[field]) || fields.some((field) => values[field].length > maxLengths[field]) || postalCode.length > 20) {
+    return response.status(400).json({ error: "Lütfen zorunlu alanları doğru şekilde doldurun." });
+  }
+  if (values.phone.length < 7 || !/^[+()\d\s.-]+$/.test(values.phone)) return response.status(400).json({ error: "Geçerli bir telefon numarası girin." });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    if (body.isDefault === true) await client.query("UPDATE addresses SET is_default = FALSE WHERE user_id = $1", [request.auth.user.id]);
+    const result = await client.query(
+      `UPDATE addresses SET title = $3, recipient_name = $4, phone = $5, city = $6, district = $7,
+         postal_code = $8, address_line = $9, is_default = $10
+       WHERE id = $1 AND user_id = $2
+       RETURNING id, title, recipient_name AS "recipientName", phone, country, city, district,
+         postal_code AS "postalCode", address_line AS "addressLine", is_default AS "isDefault"`,
+      [id, request.auth.user.id, values.title, values.recipientName, values.phone, values.city, values.district, postalCode || null, values.addressLine, body.isDefault === true]
+    );
+    if (!result.rowCount) { await client.query("ROLLBACK"); return response.status(404).json({ error: "Adres bulunamadı." }); }
+    await client.query("COMMIT");
+    response.json({ address: result.rows[0] });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Adres güncellenemedi:", error);
+    response.status(500).json({ error: "Adres güncellenemedi." });
+  } finally { client.release(); }
+});
+
+app.delete("/api/addresses/:id", requireAuth, requireVerifiedEmail, async (request, response) => {
+  const id = Number(request.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return response.status(400).json({ error: "Geçersiz adres." });
+  try {
+    const result = await pool.query("DELETE FROM addresses WHERE id = $1 AND user_id = $2", [id, request.auth.user.id]);
+    if (!result.rowCount) return response.status(404).json({ error: "Adres bulunamadı." });
+    response.json({ success: true });
+  } catch (error) {
+    console.error("Adres silinemedi:", error);
+    response.status(500).json({ error: "Adres silinemedi." });
   }
 });
 

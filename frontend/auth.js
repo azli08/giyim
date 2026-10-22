@@ -22,6 +22,7 @@ const requestAuth = async (path, options = {}) => {
   if (!response.ok) {
     const error = new Error(data.error || "İşlem tamamlanamadı. Lütfen tekrar dene.");
     error.status = response.status;
+    error.code = data.code;
     throw error;
   }
 
@@ -77,6 +78,11 @@ const initAuthForm = () => {
         method: "POST",
         body: JSON.stringify(payload),
       });
+      if (isRegister) {
+        setAuthFeedback(feedback, result.message || "Hesabın oluşturuldu. E-posta ve şifrenle giriş yapabilirsin.", "success");
+        submitButton.disabled = true;
+        return;
+      }
       const firstName = result.user?.firstName;
       const welcomeMessage = firstName
         ? `Hoş geldin, ${firstName}! Mağazaya yönlendiriliyorsun…`
@@ -92,6 +98,51 @@ const initAuthForm = () => {
       submitButton.disabled = false;
       submitButton.classList.remove("is-loading");
     }
+  });
+};
+
+const initEmailVerificationRequest = () => {
+  const form = document.querySelector("#email-verification-request-form");
+  if (!form) return;
+  const feedback = form.querySelector(".auth-feedback");
+  const submitButton = form.querySelector(".auth-submit");
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!form.reportValidity()) return;
+    submitButton.disabled = true;
+    setAuthFeedback(feedback, "Bağlantı gönderiliyor…", "loading");
+    try {
+      await requestAuth("/auth/email-verification/request", {
+        method: "POST",
+        body: JSON.stringify({ email: form.elements.email.value }),
+      });
+      setAuthFeedback(feedback, "Hesabın varsa yeni doğrulama bağlantısı gönderildi. Gelen kutunu kontrol et.", "success");
+    } catch (error) {
+      setAuthFeedback(feedback, error.message || "Doğrulama bağlantısı gönderilemedi.", "error");
+    } finally {
+      submitButton.disabled = false;
+    }
+  });
+};
+
+const initEmailVerification = () => {
+  const feedback = document.querySelector("#email-verification-feedback");
+  if (!feedback) return;
+  const token = new URLSearchParams(window.location.search).get("token");
+  if (token) window.history.replaceState(null, "", window.location.pathname);
+  if (!token) {
+    setAuthFeedback(feedback, "Doğrulama bağlantısı eksik. Yeni bağlantı isteyebilirsin.", "error");
+    return;
+  }
+  setAuthFeedback(feedback, "E-posta adresin doğrulanıyor…", "loading");
+  requestAuth("/auth/email-verification/confirm", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  }).then(() => {
+    setAuthFeedback(feedback, "E-posta adresin doğrulandı. Mağazaya yönlendiriliyorsun…", "success");
+    window.setTimeout(() => window.location.assign("./index.html"), 1000);
+  }).catch((error) => {
+    setAuthFeedback(feedback, error.message || "Doğrulama bağlantısı geçersiz veya süresi dolmuş.", "error");
   });
 };
 
@@ -207,5 +258,7 @@ const initAccountLink = async () => {
 document.addEventListener("DOMContentLoaded", () => {
   initAuthForm();
   initPasswordRecovery();
+  initEmailVerificationRequest();
+  initEmailVerification();
   initAccountLink();
 });
