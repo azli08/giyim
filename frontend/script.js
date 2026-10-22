@@ -638,7 +638,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const addressLink = document.createElement("a");
   addressLink.className = "cart-address-link";
   addressLink.href = "./adres.html";
-  addressLink.textContent = "Teslimat adresi ekle →";
+  addressLink.textContent = "Sepete git →";
   cartPanel.append(addressLink);
   const money = { format: formatStoreMoney };
 
