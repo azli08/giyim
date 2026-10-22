@@ -45,10 +45,10 @@
         <form id="address-form" class="address-form">
           <label class="address-field"><span>Adres başlığı</span><input name="title" type="text" placeholder="Ev, İş gibi" maxlength="80" autocomplete="off" required></label>
           <label class="address-field"><span>Ad soyad</span><input name="recipientName" type="text" placeholder="Teslim alacak kişinin adı" maxlength="160" autocomplete="name" required></label>
-          <label class="address-field"><span>Telefon</span><input name="phone" type="tel" placeholder="05XX XXX XX XX" maxlength="24" autocomplete="tel" required></label>
+          <label class="address-field"><span>Telefon</span><input name="phone" type="tel" inputmode="tel" placeholder="05XX XXX XX XX" maxlength="24" pattern="[+()0-9 .-]{7,24}" title="Türkiye numarası 10 rakam, 0 ile başlıyorsa 11 veya +90 ile başlıyorsa 12 rakam olmalı." autocomplete="tel" required></label>
           <label class="address-field"><span>İl</span><input name="city" type="text" placeholder="İstanbul" maxlength="100" autocomplete="address-level1" required></label>
           <label class="address-field"><span>İlçe</span><input name="district" type="text" placeholder="Kadıköy" maxlength="100" autocomplete="address-level2" required></label>
-          <label class="address-field"><span>Posta kodu <small>(isteğe bağlı)</small></span><input name="postalCode" type="text" placeholder="34000" maxlength="20" autocomplete="postal-code"></label>
+          <label class="address-field"><span>Posta kodu <small>(isteğe bağlı)</small></span><input name="postalCode" type="text" inputmode="numeric" placeholder="34000" maxlength="5" pattern="[0-9]{5}" autocomplete="postal-code"></label>
           <label class="address-field address-field-wide"><span>Açık adres</span><textarea name="addressLine" rows="3" placeholder="Mahalle, sokak, bina ve daire bilgisi" maxlength="500" autocomplete="street-address" required></textarea></label>
           <label class="address-default"><input name="isDefault" type="checkbox"><span class="address-checkmark" aria-hidden="true">♡</span><span>Varsayılan teslimat adresim olsun</span></label>
           <p class="address-feedback" role="status" aria-live="polite"></p>

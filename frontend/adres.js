@@ -21,9 +21,33 @@ document.addEventListener("DOMContentLoaded", async () => {
   const savedAddressList = document.querySelector("#saved-address-list");
   const orderItems = document.querySelector("#address-order-items");
   const orderTotal = document.querySelector("#address-order-total");
+  const phoneInput = form.elements.phone;
+  const postalCodeInput = form.elements.postalCode;
   const continueLink = document.querySelector("#continue-to-payment");
   const cancelEdit = document.querySelector("#cancel-address-edit");
   let addresses = [];
+
+  postalCodeInput.addEventListener("input", () => {
+    postalCodeInput.value = postalCodeInput.value.replace(/\D/g, "").slice(0, 5);
+  });
+
+  phoneInput.addEventListener("input", () => {
+    let cleaned = phoneInput.value.replace(/[^+()\d\s.-]/g, "").slice(0, 24);
+    const digits = cleaned.match(/\d/g) || [];
+    const maxDigits = digits.join("").startsWith("90") ? 12 : digits[0] === "0" ? 11 : 10;
+    if (digits.length > maxDigits) {
+      let keptDigits = 0;
+      cleaned = cleaned.replace(/\d/g, (digit) => (++keptDigits <= maxDigits ? digit : ""));
+    }
+    if (phoneInput.value !== cleaned) phoneInput.value = cleaned;
+    const normalizedDigits = (cleaned.match(/\d/g) || []).join("");
+    const validTurkishNumber = normalizedDigits.length === 10
+      || (normalizedDigits.length === 11 && normalizedDigits.startsWith("0"))
+      || (normalizedDigits.length === 12 && normalizedDigits.startsWith("90"));
+    phoneInput.setCustomValidity(cleaned && !validTurkishNumber
+      ? "Türkiye telefon numarası 10 rakam, 0 ile başlıyorsa 11 veya 90 ile başlıyorsa 12 rakam olmalı."
+      : "");
+  });
   let editingId = null;
 
   const showFeedback = (message, state = "") => { feedback.textContent = message; feedback.dataset.state = state; };
