@@ -25,10 +25,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   const postalCodeInput = form.elements.postalCode;
   const continueLink = document.querySelector("#continue-to-payment");
   const cancelEdit = document.querySelector("#cancel-address-edit");
+  const deleteAddressDialog = document.querySelector("#delete-address-dialog");
+  const deleteAddressName = deleteAddressDialog.querySelector(".address-confirm-name");
   let addresses = [];
 
   postalCodeInput.addEventListener("input", () => {
-    postalCodeInput.value = postalCodeInput.value.replace(/\D/g, "").slice(0, 5);
+    postalCodeInput.value = postalCodeInput.value.slice(0, 20);
   });
 
   phoneInput.addEventListener("input", () => {
@@ -41,11 +43,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     if (phoneInput.value !== cleaned) phoneInput.value = cleaned;
     const normalizedDigits = (cleaned.match(/\d/g) || []).join("");
-    const validTurkishNumber = normalizedDigits.length === 10
-      || (normalizedDigits.length === 11 && normalizedDigits.startsWith("0"))
-      || (normalizedDigits.length === 12 && normalizedDigits.startsWith("90"));
-    phoneInput.setCustomValidity(cleaned && !validTurkishNumber
-      ? "Türkiye telefon numarası 10 rakam, 0 ile başlıyorsa 11 veya 90 ile başlıyorsa 12 rakam olmalı."
+    const validInternationalNumber = normalizedDigits.length >= 7 && normalizedDigits.length <= 15;
+    phoneInput.setCustomValidity(cleaned && !validInternationalNumber
+      ? "Telefon numarası 7 ile 15 rakam arasında olmalı."
       : "");
   });
   let editingId = null;
@@ -81,6 +81,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const beginEdit = (address) => {
     editingId = address.id;
     for (const key of ["title", "recipientName", "phone", "city", "district", "postalCode", "addressLine"]) form.elements[key].value = address[key] || "";
+    form.elements.countryCode.value = address.countryCode || "TR";
     form.elements.isDefault.checked = address.isDefault;
     document.querySelector("#address-form-title").textContent = "Adresi düzenle";
     document.querySelector("#address-submit-label").textContent = "Değişiklikleri kaydet";
@@ -102,7 +103,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch (error) { showFeedback(error.message, "error"); }
   };
   const deleteAddress = async (address) => {
-    if (!window.confirm(`“${address.title}” adresini silmek istiyor musun?`)) return;
+    deleteAddressName.textContent = address.title;
+    const confirmation = await new Promise((resolve) => {
+      deleteAddressDialog.addEventListener("close", () => resolve(deleteAddressDialog.returnValue), { once: true });
+      deleteAddressDialog.showModal();
+    });
+    if (confirmation !== "delete") return;
     try { await requestAddressApi(`/addresses/${address.id}`, { method: "DELETE" }); addresses = addresses.filter((saved) => saved.id !== address.id); renderAddresses(); showFeedback("Adres silindi.", "success"); }
     catch (error) { showFeedback(error.message, "error"); }
   };

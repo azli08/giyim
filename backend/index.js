@@ -12,6 +12,10 @@ const app = express();
 const scrypt = promisify(scryptCallback);
 const sessionCookieName = "moda_session";
 const sessionDurationMs = 7 * 24 * 60 * 60 * 1000;
+const supportedCountries = new Map([
+  ["TR", "Türkiye"], ["DE", "Almanya"], ["GB", "Birleşik Krallık"],
+  ["US", "Amerika Birleşik Devletleri"], ["NL", "Hollanda"], ["FR", "Fransa"],
+]);
 
 const allowedOrigins = new Set(
   (process.env.FRONTEND_ORIGIN || "http://localhost:5500,http://127.0.0.1:5500")
@@ -686,12 +690,14 @@ app.get("/api/admin/products", requireAdmin, async (request, response) => {
   try {
     const result = await pool.query(
       `SELECT p.id, p.name, p.slug, p.description, p.is_active,
+              p.gender, p.is_new AS "isNew",
               p.category_id, c.name AS category,
               COALESCE((
                 SELECT jsonb_agg(jsonb_build_object(
                   'id', v.id, 'sku', v.sku, 'size', v.size,
                   'color', v.color, 'price', v.price,
-                  'stockQuantity', v.stock_quantity
+                  'stockQuantity', v.stock_quantity,
+                  'compareAtPrice', v.compare_at_price
                 ) ORDER BY v.size, v.color)
                 FROM product_variants v
                 WHERE v.product_id = p.id AND v.is_active = TRUE
@@ -974,6 +980,7 @@ app.get("/api/addresses", requireAuth, requireVerifiedEmail, async (request, res
   try {
     const result = await pool.query(
       `SELECT id, title, recipient_name AS "recipientName", phone, country,
+              country_code AS "countryCode",
               city, district, postal_code AS "postalCode",
               address_line AS "addressLine", is_default AS "isDefault"
        FROM addresses
@@ -992,21 +999,21 @@ app.post("/api/addresses", requireAuth, requireVerifiedEmail, async (request, re
   const body = request.body ?? {};
   const fields = ["title", "recipientName", "phone", "city", "district", "addressLine"];
   const values = Object.fromEntries(fields.map((field) => [field, typeof body[field] === "string" ? body[field].trim() : ""]));
+  const countryCode = typeof body.countryCode === "string" ? body.countryCode.toUpperCase() : "";
   const maxLengths = { title: 80, recipientName: 160, phone: 24, city: 100, district: 100, addressLine: 500 };
   const postalCode = typeof body.postalCode === "string" ? body.postalCode.trim() : "";
   if (fields.some((field) => !values[field]) || fields.some((field) => values[field].length > maxLengths[field])) {
     return response.status(400).json({ error: "Lütfen zorunlu alanları doğru şekilde doldurun." });
   }
-  if (postalCode && !/^\d{5}$/.test(postalCode)) {
-    return response.status(400).json({ error: "Posta kodu 5 rakamdan oluşmalı." });
+  if (!supportedCountries.has(countryCode)) {
+    return response.status(400).json({ error: "Seçilen ülkeye teslimat şu anda desteklenmiyor." });
   }
-  const phoneDigitCount = (values.phone.match(/\d/g) || []).length;
+  if (postalCode.length > 20) {
+    return response.status(400).json({ error: "Posta kodu 20 karakterden uzun olamaz." });
+  }
   const phoneDigits = values.phone.replace(/\D/g, "");
-  const validTurkishPhone = phoneDigitCount === 10
-    || (phoneDigitCount === 11 && phoneDigits.startsWith("0"))
-    || (phoneDigitCount === 12 && phoneDigits.startsWith("90"));
-  if (!validTurkishPhone || !/^[+()\d\s.-]+$/.test(values.phone)) {
-    return response.status(400).json({ error: "Türkiye için geçerli bir telefon numarası girin." });
+  if (phoneDigits.length < 7 || phoneDigits.length > 15 || !/^[+()\d\s.-]+$/.test(values.phone)) {
+    return response.status(400).json({ error: "Uluslararası biçimde geçerli bir telefon numarası girin." });
   }
 
   const client = await pool.connect();
@@ -1017,12 +1024,12 @@ app.post("/api/addresses", requireAuth, requireVerifiedEmail, async (request, re
     }
     const result = await client.query(
       `INSERT INTO addresses
-         (user_id, title, recipient_name, phone, country, city, district, postal_code, address_line, is_default)
-       VALUES ($1, $2, $3, $4, 'Türkiye', $5, $6, $7, $8, $9)
-       RETURNING id, title, recipient_name AS "recipientName", phone, country,
+         (user_id, title, recipient_name, phone, country, country_code, city, district, postal_code, address_line, is_default)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING id, title, recipient_name AS "recipientName", phone, country, country_code AS "countryCode",
                  city, district, postal_code AS "postalCode",
                  address_line AS "addressLine", is_default AS "isDefault"`,
-      [request.auth.user.id, values.title, values.recipientName, values.phone, values.city, values.district, postalCode || null, values.addressLine, body.isDefault === true]
+      [request.auth.user.id, values.title, values.recipientName, values.phone, supportedCountries.get(countryCode), countryCode, values.city, values.district, postalCode || null, values.addressLine, body.isDefault === true]
     );
     await client.query("COMMIT");
     response.status(201).json({ address: result.rows[0] });
@@ -1041,24 +1048,27 @@ app.put("/api/addresses/:id", requireAuth, requireVerifiedEmail, async (request,
   const body = request.body ?? {};
   const fields = ["title", "recipientName", "phone", "city", "district", "addressLine"];
   const values = Object.fromEntries(fields.map((field) => [field, typeof body[field] === "string" ? body[field].trim() : ""]));
+  const countryCode = typeof body.countryCode === "string" ? body.countryCode.toUpperCase() : "";
   const maxLengths = { title: 80, recipientName: 160, phone: 24, city: 100, district: 100, addressLine: 500 };
   const postalCode = typeof body.postalCode === "string" ? body.postalCode.trim() : "";
   if (fields.some((field) => !values[field]) || fields.some((field) => values[field].length > maxLengths[field]) || postalCode.length > 20) {
     return response.status(400).json({ error: "Lütfen zorunlu alanları doğru şekilde doldurun." });
   }
-  if (values.phone.length < 7 || !/^[+()\d\s.-]+$/.test(values.phone)) return response.status(400).json({ error: "Geçerli bir telefon numarası girin." });
+  if (!supportedCountries.has(countryCode)) return response.status(400).json({ error: "Seçilen ülkeye teslimat şu anda desteklenmiyor." });
+  const phoneDigits = values.phone.replace(/\D/g, "");
+  if (phoneDigits.length < 7 || phoneDigits.length > 15 || !/^[+()\d\s.-]+$/.test(values.phone)) return response.status(400).json({ error: "Geçerli bir telefon numarası girin." });
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     if (body.isDefault === true) await client.query("UPDATE addresses SET is_default = FALSE WHERE user_id = $1", [request.auth.user.id]);
     const result = await client.query(
-      `UPDATE addresses SET title = $3, recipient_name = $4, phone = $5, city = $6, district = $7,
-         postal_code = $8, address_line = $9, is_default = $10
+      `UPDATE addresses SET title = $3, recipient_name = $4, phone = $5, country = $6, country_code = $7,
+         city = $8, district = $9, postal_code = $10, address_line = $11, is_default = $12
        WHERE id = $1 AND user_id = $2
-       RETURNING id, title, recipient_name AS "recipientName", phone, country, city, district,
+       RETURNING id, title, recipient_name AS "recipientName", phone, country, country_code AS "countryCode", city, district,
          postal_code AS "postalCode", address_line AS "addressLine", is_default AS "isDefault"`,
-      [id, request.auth.user.id, values.title, values.recipientName, values.phone, values.city, values.district, postalCode || null, values.addressLine, body.isDefault === true]
+      [id, request.auth.user.id, values.title, values.recipientName, values.phone, supportedCountries.get(countryCode), countryCode, values.city, values.district, postalCode || null, values.addressLine, body.isDefault === true]
     );
     if (!result.rowCount) { await client.query("ROLLBACK"); return response.status(404).json({ error: "Adres bulunamadı." }); }
     await client.query("COMMIT");
@@ -1308,13 +1318,15 @@ app.delete("/api/cart/items/:itemId", requireAuth, async (request, response) => 
 app.get("/api/products", async (request, response) => {
   try {
     const result = await pool.query(
-      `SELECT p.id, p.name, p.slug, p.description,
+      `SELECT p.id, p.name, p.slug, p.description, p.gender,
+              p.is_new AS "isNew",
               c.name AS category, c.slug AS category_slug,
               COALESCE((
                 SELECT jsonb_agg(jsonb_build_object(
                   'id', v.id, 'sku', v.sku, 'size', v.size,
                   'color', v.color, 'price', v.price,
-                  'stockQuantity', v.stock_quantity
+                  'stockQuantity', v.stock_quantity,
+                  'compareAtPrice', v.compare_at_price
                 ) ORDER BY v.size)
                 FROM product_variants v
                 WHERE v.product_id = p.id AND v.is_active = TRUE

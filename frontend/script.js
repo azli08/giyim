@@ -43,7 +43,8 @@ const createProductCard = (product) => {
   info.className = "product-info";
   const category = document.createElement("p");
   category.className = "product-category";
-  category.textContent = product.category || "MODA";
+  const genderLabel = product.gender === "girl" ? "Kız Çocuk" : product.gender === "boy" ? "Erkek Çocuk" : "";
+  category.textContent = [genderLabel, product.category].filter(Boolean).join(" · ") || "MODA";
   const title = document.createElement("h3");
   title.textContent = product.name;
   const price = document.createElement("p");
@@ -51,6 +52,13 @@ const createProductCard = (product) => {
   price.textContent = availablePrices.length
     ? formatStoreMoney(Math.min(...availablePrices))
     : "Stokta yok";
+  const saleVariant = variants.find((variant) => Number(variant.compareAtPrice) > Number(variant.price));
+  if (saleVariant) {
+    const originalPrice = document.createElement("del");
+    originalPrice.className = "product-original-price";
+    originalPrice.textContent = formatStoreMoney(saleVariant.compareAtPrice);
+    price.append(" ", originalPrice);
+  }
   const sizeLabel = document.createElement("p");
   sizeLabel.className = "size-label";
   sizeLabel.textContent = "Beden (yaş)";
@@ -77,6 +85,10 @@ const createProductCard = (product) => {
   addButton.className = "add-to-cart";
   addButton.type = "button";
   addButton.textContent = "Sepete Ekle";
+  if (!variants.some((variant) => Number(variant.stockQuantity) > 0)) {
+    addButton.disabled = true;
+    addButton.textContent = "Stokta yok";
+  }
 
   info.append(category, title, price, sizeLabel, sizeList, addButton);
   card.append(image, info);
@@ -102,7 +114,12 @@ const loadCatalog = async () => {
     const shownProducts = category === "all" ? products.slice(0, 3) : products;
     grid.replaceChildren(...shownProducts.map(createProductCard));
   } catch (error) {
-    console.info("Backend kataloğu kullanılamadı; sayfadaki örnek ürünler gösteriliyor.", error);
+    console.info("Backend kataloğu kullanılamadı; örnek ürünler satın almaya kapatıldı.", error);
+    document.querySelectorAll(".product-card").forEach((card) => {
+      card.querySelectorAll(".size-list button, .add-to-cart").forEach((button) => { button.disabled = true; });
+      const price = card.querySelector(".product-price");
+      if (price) price.textContent = "Stok bilgisi yüklenemedi";
+    });
   } finally {
     window.clearTimeout(timeout);
   }
@@ -240,12 +257,16 @@ const initCatalogTools = () => {
   search.addEventListener("input", apply);
   priceFilter.addEventListener("change", apply);
   sort.addEventListener("change", apply);
-  inStock.addEventListener("change", apply);
+  inStock.addEventListener("change", () => {
+    toolbar.querySelector(".catalog-checkmark").textContent = inStock.checked ? "♥" : "♡";
+    apply();
+  });
   toolbar.querySelector(".catalog-clear").addEventListener("click", () => {
     search.value = "";
     priceFilter.value = "all";
     sort.value = "recommended";
     inStock.checked = false;
+    toolbar.querySelector(".catalog-checkmark").textContent = "♡";
     apply();
     search.focus();
   });
@@ -583,6 +604,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         sizeOption.type = "button";
         sizeOption.textContent = sizeButton.textContent.trim();
         sizeOption.setAttribute("aria-pressed", "false");
+        sizeOption.disabled = sizeButton.disabled;
         sizeOption.addEventListener("click", () => {
           activeProductSize = sizeOption.textContent;
           dialogSizes.querySelectorAll("button").forEach((button) => {

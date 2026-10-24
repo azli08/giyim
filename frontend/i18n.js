@@ -48,6 +48,23 @@
     "Sepet özeti ": ["Order summary ", "ملخص السلة "], "Sepet özeti": ["Order summary", "ملخص السلة"], "Sepet yükleniyor…": ["Loading cart…", "جارٍ تحميل السلة…"], "Ürünler toplamı": ["Items subtotal", "إجمالي المنتجات"], "Kargo ücreti sipariş aşamasında hesaplanır.": ["Shipping is calculated during checkout.", "يُحسب الشحن أثناء إتمام الطلب."], "Alışverişe devam et": ["Continue shopping", "متابعة التسوق"], "Teslimat adresi ekle →": ["Add delivery address →", "أضف عنوان التوصيل →"],
     "Sepetinde henüz ürün yok.": ["Your cart is empty.", "سلتك فارغة حالياً."], "Sepet özeti şu anda yüklenemedi.": ["The order summary couldn't be loaded right now.", "تعذّر تحميل ملخص السلة حالياً."], "Adres kaydediliyor…": ["Saving address…", "جارٍ حفظ العنوان…"], "Adresin hesabına kaydedildi ♥": ["Address saved to your account ♥", "تم حفظ العنوان في حسابك ♥"], "Adres bilgileri yüklenemedi.": ["Couldn't load address details.", "تعذّر تحميل بيانات العنوان."], "Adres kaydedilemedi. Lütfen tekrar dene.": ["Couldn't save the address. Please try again.", "تعذّر حفظ العنوان. حاول مرة أخرى."], "Varsayılan": ["Default", "افتراضي"], "İşlem tamamlanamadı.": ["Couldn't complete the request.", "تعذّر إكمال الطلب."], "Lütfen zorunlu alanları doğru şekilde doldurun.": ["Please complete the required fields correctly.", "يرجى تعبئة الحقول المطلوبة بشكل صحيح."], "Geçerli bir telefon numarası girin.": ["Enter a valid phone number.", "أدخل رقم هاتف صالحاً."], "Adresler yüklenemedi.": ["Couldn't load addresses.", "تعذّر تحميل العناوين."], "Adres kaydedilemedi.": ["Couldn't save the address.", "تعذّر حفظ العنوان."]
   });
+  Object.assign(strings, {
+    "Adresi silmek istiyor musun?": ["Would you like to delete this address?", "هل تريد حذف هذا العنوان؟"],
+    "Bu adresi silmek istediğinden emin misin?": ["Are you sure you want to remove this address?", "هل أنت متأكد من رغبتك في حذف هذا العنوان؟"],
+    "Vazgeç": ["Keep address", "الاحتفاظ بالعنوان"], "Evet, sil": ["Yes, delete", "نعم، احذف"],
+    "Adres silindi.": ["Address deleted.", "تم حذف العنوان."],
+    "Stokta yok": ["Out of stock", "غير متوفر"],
+    "Stok bilgisi yüklenemedi": ["Stock information could not be loaded", "تعذر تحميل معلومات المخزون"],
+    "Ülke": ["Country", "البلد"],
+    "Türkiye": ["Türkiye", "تركيا"], "Almanya": ["Germany", "ألمانيا"],
+    "Birleşik Krallık": ["United Kingdom", "المملكة المتحدة"],
+    "Amerika Birleşik Devletleri": ["United States", "الولايات المتحدة"],
+    "Hollanda": ["Netherlands", "هولندا"], "Fransa": ["France", "فرنسا"],
+    "Kız Çocuk · Yeni Gelenler": ["Girls · New Arrivals", "البنات · وصل حديثاً"],
+    "Erkek Çocuk · Yeni Gelenler": ["Boys · New Arrivals", "الأولاد · وصل حديثاً"],
+    "Kız Çocuk · İndirim": ["Girls · Sale", "البنات · تخفيضات"],
+    "Erkek Çocuk · İndirim": ["Boys · Sale", "الأولاد · تخفيضات"]
+  });
   const originals = new WeakMap();
   const rendered = new WeakMap();
   const current = () => document.documentElement.lang?.slice(0, 2) || "tr";

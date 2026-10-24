@@ -37,6 +37,7 @@ async function migrateDatabase() {
       "005_user_roles.sql",
       "006_password_reset_tokens.sql",
       "007_email_verification.sql",
+      "008_catalog_and_addresses.sql",
     ];
 
     for (const fileName of migrationFiles) {
