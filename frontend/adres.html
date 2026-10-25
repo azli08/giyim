@@ -45,10 +45,10 @@
         <form id="address-form" class="address-form">
           <label class="address-field"><span>Adres başlığı</span><input name="title" type="text" placeholder="Ev, İş gibi" maxlength="80" autocomplete="off" required></label>
           <label class="address-field"><span>Ad soyad</span><input name="recipientName" type="text" placeholder="Teslim alacak kişinin adı" maxlength="160" autocomplete="name" required></label>
-          <label class="address-field"><span>Ülke</span><select name="countryCode" autocomplete="country" required><option value="TR">Türkiye</option><option value="DE">Almanya</option><option value="GB">Birleşik Krallık</option><option value="US">Amerika Birleşik Devletleri</option><option value="NL">Hollanda</option><option value="FR">Fransa</option></select></label>
+          <label class="address-field"><span>Ülke</span><select class="address-native-select" name="countryCode" autocomplete="country" required><option value="" selected disabled>Ülke seçin</option><option value="TR">Türkiye</option><option value="SY">Suriye</option></select></label>
           <label class="address-field"><span>Telefon</span><input name="phone" type="tel" inputmode="tel" placeholder="+90 5XX XXX XX XX" maxlength="24" pattern="[+()0-9 .-]{7,24}" title="Uluslararası telefon numarası girin." autocomplete="tel" required></label>
-          <label class="address-field"><span>İl</span><input name="city" type="text" placeholder="İstanbul" maxlength="100" autocomplete="address-level1" required></label>
-          <label class="address-field"><span>İlçe</span><input name="district" type="text" placeholder="Kadıköy" maxlength="100" autocomplete="address-level2" required></label>
+          <label class="address-field"><span>Şehir</span><select class="address-native-select" name="city" autocomplete="address-level1" required disabled><option value="" selected disabled>Önce ülke seçin</option></select></label>
+          <label class="address-field"><span>İlçe</span><input name="district" type="text" placeholder="İlçenizi yazın" maxlength="100" autocomplete="address-level2" required></label>
           <label class="address-field"><span>Posta kodu <small>(isteğe bağlı)</small></span><input name="postalCode" type="text" placeholder="34000" maxlength="20" autocomplete="postal-code"></label>
           <label class="address-field address-field-wide"><span>Açık adres</span><textarea name="addressLine" rows="3" placeholder="Mahalle, sokak, bina ve daire bilgisi" maxlength="500" autocomplete="street-address" required></textarea></label>
           <label class="address-default"><input name="isDefault" type="checkbox"><span class="address-checkmark" aria-hidden="true">♡</span><span>Varsayılan teslimat adresim olsun</span></label>

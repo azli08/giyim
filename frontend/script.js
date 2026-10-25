@@ -44,7 +44,12 @@ const createProductCard = (product) => {
   const category = document.createElement("p");
   category.className = "product-category";
   const genderLabel = product.gender === "girl" ? "Kız Çocuk" : product.gender === "boy" ? "Erkek Çocuk" : "";
-  category.textContent = [genderLabel, product.category].filter(Boolean).join(" · ") || "MODA";
+  // The API category is often the same value as genderLabel. Prefer the
+  // gender label to avoid duplicated Turkish text, then translate it before
+  // inserting it so Arabic labels also get a consistent text direction.
+  const categorySource = genderLabel || product.category || "MODA";
+  category.textContent = window.MODA_I18N?.t(categorySource) || categorySource;
+  category.dir = "auto";
   const title = document.createElement("h3");
   title.textContent = product.name;
   const price = document.createElement("p");
@@ -136,10 +141,10 @@ const initCatalogTools = () => {
     <div class="catalog-toolbar-heading"><span aria-hidden="true">✨</span><span>Ürünleri keşfet</span><span class="catalog-sparkle" aria-hidden="true">✦</span></div>
     <div class="catalog-tool-controls">
       <label class="catalog-search-wrap"><span class="visually-hidden">Ürünlerde ara…</span><span class="catalog-search-icon" aria-hidden="true">⌕</span><input class="catalog-search" type="search" placeholder="Ürünlerde ara…" autocomplete="off"></label>
-      <div class="catalog-select-wrap"><span>Fiyat aralığı</span><select class="catalog-price-filter"><option value="all">Tüm fiyatlar</option><option value="under-500">500 ₺ altı</option><option value="500-700">500–700 ₺</option><option value="700-plus">700 ₺ ve üzeri</option></select></div>
-      <div class="catalog-select-wrap"><span>Sırala</span><select class="catalog-sort"><option value="recommended">Önerilen</option><option value="price-asc">Fiyat: düşükten yükseğe</option><option value="price-desc">Fiyat: yüksekten düşüğe</option><option value="name">Ada göre</option></select></div>
+      <div class="catalog-select-wrap"><span>Fiyat aralığı</span><select class="catalog-price-filter"><option value="all" data-source-label="Tüm fiyatlar">Tüm fiyatlar</option><option value="under-500" data-source-label="500 ₺ altı">500 ₺ altı</option><option value="500-700" data-source-label="500–700 ₺">500–700 ₺</option><option value="700-plus" data-source-label="700 ₺ ve üzeri">700 ₺ ve üzeri</option></select></div>
+      <div class="catalog-select-wrap"><span>Sırala</span><select class="catalog-sort"><option value="recommended" data-source-label="Önerilen">Önerilen</option><option value="price-asc" data-source-label="Fiyat: düşükten yükseğe">Fiyat: düşükten yükseğe</option><option value="price-desc" data-source-label="Fiyat: yüksekten düşüğe">Fiyat: yüksekten düşüğe</option><option value="name" data-source-label="Ada göre">Ada göre</option></select></div>
       <label class="catalog-stock-filter"><input type="checkbox"><span class="catalog-checkmark" aria-hidden="true">♡</span><span>Stokta olanlar</span></label>
-      <button class="catalog-clear" type="button"><span aria-hidden="true">↺</span> Filtreleri temizle</button>
+      <button class="catalog-clear" type="button"><span aria-hidden="true">↺</span><span class="catalog-clear-label">Filtreleri temizle</span></button>
     </div>
     <div class="catalog-toolbar-footer"><span class="catalog-results" aria-live="polite"></span><span class="catalog-empty" hidden>Bu filtrelerle ürün bulamadık. Seçimleri değiştirmeyi dene. 💌</span></div>
   `;
@@ -153,7 +158,7 @@ const initCatalogTools = () => {
   const empty = toolbar.querySelector(".catalog-empty");
   const originalOrder = [...grid.querySelectorAll(":scope > .product-card")];
   const customSelects = [priceFilter, sort].map((select, index) => {
-    const titleElement = select.parentElement.querySelector("span");
+    const titleSource = index === 0 ? "Fiyat aralığı" : "Sırala";
     const picker = document.createElement("div");
     picker.className = "catalog-cute-select";
     const trigger = document.createElement("button");
@@ -174,7 +179,8 @@ const initCatalogTools = () => {
       option.type = "button";
       option.setAttribute("role", "option");
       option.dataset.value = nativeOption.value;
-      option.textContent = nativeOption.textContent;
+      option.dataset.sourceLabel = nativeOption.dataset.sourceLabel || nativeOption.textContent;
+      option.textContent = window.MODA_I18N?.t(option.dataset.sourceLabel) || option.dataset.sourceLabel;
       option.addEventListener("click", () => {
         select.value = nativeOption.value;
         select.dispatchEvent(new Event("change", { bubbles: true }));
@@ -188,9 +194,12 @@ const initCatalogTools = () => {
 
     const sync = () => {
       const selected = select.options[select.selectedIndex];
-      trigger.textContent = `${selected?.textContent || ""}  ˅`;
-      trigger.setAttribute("aria-label", `${titleElement.textContent}: ${selected?.textContent || ""}`);
+      const selectedLabel = selected?.dataset.sourceLabel || selected?.textContent || "";
+      const translatedLabel = window.MODA_I18N?.t(selectedLabel) || selectedLabel;
+      trigger.textContent = translatedLabel;
+      trigger.setAttribute("aria-label", `${window.MODA_I18N?.t(titleSource) || titleSource}: ${translatedLabel}`);
       options.forEach((option) => {
+        option.textContent = window.MODA_I18N?.t(option.dataset.sourceLabel) || option.dataset.sourceLabel;
         const isSelected = option.dataset.value === select.value;
         option.setAttribute("aria-selected", String(isSelected));
         option.classList.toggle("is-selected", isSelected);
@@ -591,7 +600,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       activeProductSize = null;
       const image = card.querySelector("img");
       dialogImage.src = image.currentSrc || image.src;
-      dialogImage.alt = image.alt;
+      dialogImage.alt = window.MODA_I18N?.t(image.dataset.i18nAlt || image.alt) || image.alt;
       dialogCategory.textContent = card.querySelector(".product-category")?.textContent || "";
       dialogTitle.textContent = card.querySelector("h3")?.textContent || "Ürün";
       dialogPrice.replaceChildren(card.querySelector(".product-price").cloneNode(true));
@@ -660,8 +669,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const addressLink = document.createElement("a");
   addressLink.className = "cart-address-link";
   addressLink.href = "./adres.html";
-  addressLink.textContent = "Sepete git →";
   cartPanel.append(addressLink);
+  const t = (message) => window.MODA_I18N?.t(message) || message;
   const money = { format: formatStoreMoney };
 
   let cart = { items: [], itemCount: 0, total: 0 };
@@ -680,6 +689,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   const renderCart = () => {
+    addressLink.textContent = t("Sepete git →");
     cartItemsList.replaceChildren();
     const items = Array.isArray(cart.items) ? cart.items : [];
     items.forEach((item) => {
@@ -688,7 +698,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       const label = document.createElement("span");
       label.className = "cart-item-label";
-      label.textContent = `${item.name} · ${item.size} yaş${item.color ? ` · ${item.color}` : ""}`;
+      const productName = document.createElement("span");
+      productName.className = "cart-item-name";
+      productName.textContent = t(item.name);
+      const variantDescription = document.createElement("span");
+      variantDescription.className = "cart-item-variant";
+      variantDescription.textContent = `${item.size} ${t("yaş")}${item.color ? ` · ${t(item.color)}` : ""}`;
+      label.append(productName, variantDescription);
       const price = document.createElement("span");
       price.className = "cart-item-price";
       price.textContent = money.format(Number(item.lineTotal));
@@ -701,7 +717,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       decrease.dataset.cartAction = "quantity";
       decrease.dataset.itemId = item.id;
       decrease.dataset.quantity = String(Number(item.quantity) - 1);
-      decrease.setAttribute("aria-label", `${item.name} miktarını azalt`);
+      decrease.setAttribute("aria-label", `${t("Miktarı azalt")}: ${t(item.name)}`);
       decrease.textContent = "−";
       decrease.disabled = Number(item.quantity) <= 1;
       const quantity = document.createElement("span");
@@ -713,7 +729,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       increase.dataset.cartAction = "quantity";
       increase.dataset.itemId = item.id;
       increase.dataset.quantity = String(Number(item.quantity) + 1);
-      increase.setAttribute("aria-label", `${item.name} miktarını artır`);
+      increase.setAttribute("aria-label", `${t("Miktarı artır")}: ${t(item.name)}`);
       increase.textContent = "+";
       increase.disabled = Number(item.quantity) >= 99 || Number(item.quantity) >= Number(item.stockQuantity);
       const remove = document.createElement("button");
@@ -721,8 +737,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       remove.type = "button";
       remove.dataset.cartAction = "remove";
       remove.dataset.itemId = item.id;
-      remove.setAttribute("aria-label", `${item.name} ürününü sepetten sil`);
-      remove.textContent = "Kaldır";
+      remove.setAttribute("aria-label", `${t("Kaldır")}: ${t(item.name)}`);
+      remove.textContent = t("Kaldır");
 
       controls.append(decrease, quantity, increase, remove);
       row.append(label, price, controls);

@@ -408,9 +408,12 @@ body.page-leaving {
 }
 
 .cart-item-label {
+  display: grid;
+  gap: 2px;
   min-width: 0;
   font-weight: 700;
 }
+.cart-item-variant { color: #806d73; font-size: .78rem; font-weight: 600; }
 
 .cart-item-price {
   color: var(--accent-dark);
@@ -1435,7 +1438,7 @@ html {
 .catalog-stock-filter input:checked + .catalog-checkmark { transform: rotate(-8deg) scale(1.08); background: #fff0f4; }
 .catalog-stock-filter input:checked + .catalog-checkmark { color: #c54f70; font-size: 1rem; }
 .catalog-stock-filter input:focus-visible + .catalog-checkmark { outline: 3px solid #c88a78; outline-offset: 2px; }
-.catalog-clear { min-height: 40px; padding: 8px 12px; border: 1px solid #efd7de; border-radius: 13px; background: #fff; color: #855467; font: 800 .78rem "Nunito", sans-serif; cursor: pointer; transition: transform .18s ease, background .18s ease; white-space: nowrap; }
+.catalog-clear { display: inline-flex; min-height: 40px; align-items: center; gap: 9px; padding: 8px 12px; border: 1px solid #efd7de; border-radius: 13px; background: #fff; color: #855467; font: 800 .78rem "Nunito", sans-serif; cursor: pointer; transition: transform .18s ease, background .18s ease; white-space: nowrap; }
 .catalog-clear:hover { transform: translateY(-2px); background: #fff0f4; }
 .catalog-toolbar-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 25px; margin-top: 8px; color: #936b79; font-size: .8rem; font-weight: 700; }
 .catalog-empty { color: #a05f76; }
@@ -1475,6 +1478,21 @@ html {
 .address-field { display: grid; gap: 6px; color: #745b64; font-size: .82rem; font-weight: 800; }
 .address-field small { color: #a28e95; font-size: .74rem; font-weight: 600; }
 .address-field input, .address-field textarea { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #ead9de; border-radius: 12px; background: #fff; color: var(--text); font: 600 .88rem "Nunito", sans-serif; }
+.address-native-select[hidden] { display: none; }
+.address-cute-select { position: relative; min-width: 0; }
+.address-cute-trigger { display: flex; width: 100%; min-height: 44px; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid #ead9de; border-radius: 13px; background: linear-gradient(135deg, #fff 0%, #fff7fa 100%); color: #654454; box-shadow: 0 3px 9px rgb(91 59 70 / 4%); font: 700 .88rem "Nunito", sans-serif; text-align: start; cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.address-cute-trigger::after { content: ""; flex: 0 0 7px; width: 7px; height: 7px; margin-inline-start: auto; border-right: 2px solid #c77b90; border-bottom: 2px solid #c77b90; transform: translateY(-2px) rotate(45deg); transition: transform .18s ease; }
+.address-cute-trigger:hover:not(:disabled) { transform: translateY(-1px); border-color: #dfabb9; }
+.address-cute-trigger[aria-expanded="true"] { border-color: #dc9cab; box-shadow: 0 0 0 3px rgb(216 121 135 / 12%), 0 8px 18px rgb(91 59 70 / 8%); }
+.address-cute-trigger[aria-expanded="true"]::after { transform: translateY(2px) rotate(225deg); }
+.address-cute-trigger:disabled { background: #fbf7f8; color: #b2a1a7; cursor: not-allowed; }
+.address-cute-trigger:focus-visible, .address-cute-option:focus-visible { outline: 3px solid rgb(200 138 120 / 30%); outline-offset: 2px; }
+.address-cute-menu { position: absolute; z-index: 50; inset: auto 0; top: calc(100% + 7px); display: grid; gap: 3px; max-height: min(270px, 45vh); overflow: auto; padding: 6px; border: 1px solid #f0d8df; border-radius: 15px; background: #fffdfd; box-shadow: 0 12px 28px rgb(86 48 62 / 16%); animation: catalog-menu-pop .15s ease-out; }
+.address-cute-menu[hidden] { display: none; }
+.address-cute-option { display: flex; width: 100%; min-height: 36px; align-items: center; gap: 8px; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; color: #71545f; font: 700 .84rem "Nunito", sans-serif; text-align: start; cursor: pointer; }
+.address-cute-option::before { content: "♡"; color: #d593a5; }
+.address-cute-option:hover, .address-cute-option.is-selected { background: #fff0f4; color: #a4526a; }
+.address-cute-option.is-selected::before { content: "♥"; color: #d8798d; }
 .address-field textarea { min-height: 88px; resize: vertical; }
 .address-field input:focus, .address-field textarea:focus { border-color: #d87987; outline: 3px solid rgb(216 121 135 / 13%); }
 .address-field-wide { grid-column: 1 / -1; }
@@ -1533,12 +1551,13 @@ html {
 .address-summary-total { display: flex; justify-content: space-between; gap: 12px; margin-top: 15px; color: #6d505b; font-size: .88rem; }
 .address-summary-total strong { color: #9f4c66; }
 .address-summary-note { margin: 10px 0 0; color: #9a858d; font-size: .76rem; line-height: 1.5; }
-.address-summary-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 18px; }
+.address-summary-actions { display: grid; grid-template-columns: 1fr 1fr; align-items: stretch; gap: 9px; margin-top: 18px; }
 .address-summary-button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 9px 12px; border: 1px solid #e8cbd3; border-radius: 12px; background: #fff; color: #9b4e65; font-size: .79rem; font-weight: 900; text-align: center; text-decoration: none; transition: transform .18s ease, box-shadow .18s ease, background .18s ease; }
 .address-summary-button:hover { transform: translateY(-1px); background: #fff4f6; box-shadow: 0 5px 12px rgb(73 52 59 / 8%); }
 .address-summary-payment { border-color: transparent; background: linear-gradient(110deg, #c65f78, #dc8792); color: #fff; }
 .address-summary-payment:hover { background: linear-gradient(110deg, #b9516c, #d87987); color: #fff; }
 .address-summary-button[hidden] { display: none; }
+.address-summary-actions .address-summary-button { min-width: 0; height: 100%; align-self: stretch; line-height: 1.35; }
 .address-continue-shopping { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; margin-top: 20px; padding: 9px 16px; border: 1px solid #e8cbd3; border-radius: 12px; background: #fff; color: #9b4e65; font-size: .83rem; font-weight: 800; text-align: center; text-decoration: none; }
 .address-continue-shopping:hover { text-decoration: underline; }
 .cart-address-link { display: block; margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: linear-gradient(110deg, #c65f78, #dc8792); color: white; font-size: .84rem; font-weight: 900; text-align: center; text-decoration: none; }
@@ -2038,6 +2057,8 @@ html[dir="rtl"] body { direction: rtl; font-family: "Noto Sans Arabic", Tahoma, 
 html[dir="rtl"] .site-header, html[dir="rtl"] .auth-header, html[dir="rtl"] .admin-header { direction: rtl; }
 html[dir="rtl"] .nav, html[dir="rtl"] .footer-links { direction: rtl; }
 html[dir="rtl"] .product-info, html[dir="rtl"] .auth-card, html[dir="rtl"] .admin-main { text-align: right; }
+html[dir="rtl"] .catalog-clear { flex-direction: row-reverse; }
+html[dir="rtl"] .about-section > .eyebrow, html[dir="rtl"] .contact-section > .eyebrow { display: none; }
 html[dir="rtl"] .contact-card > span { flex: 1; text-align: right; }
 html[dir="rtl"] .contact-card > span > * { text-align: right; unicode-bidi: plaintext; }
 html[dir="rtl"] input, html[dir="rtl"] textarea, html[dir="rtl"] select { text-align: right; }

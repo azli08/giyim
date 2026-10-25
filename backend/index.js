@@ -13,8 +13,7 @@ const scrypt = promisify(scryptCallback);
 const sessionCookieName = "moda_session";
 const sessionDurationMs = 7 * 24 * 60 * 60 * 1000;
 const supportedCountries = new Map([
-  ["TR", "Türkiye"], ["DE", "Almanya"], ["GB", "Birleşik Krallık"],
-  ["US", "Amerika Birleşik Devletleri"], ["NL", "Hollanda"], ["FR", "Fransa"],
+  ["TR", "Türkiye"], ["SY", "Suriye"],
 ]);
 
 const allowedOrigins = new Set(

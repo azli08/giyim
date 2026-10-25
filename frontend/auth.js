@@ -235,7 +235,11 @@ const initAccountLink = async () => {
     accountArea.replaceChildren();
     const greeting = document.createElement("span");
     greeting.className = "account-greeting";
-    greeting.textContent = `Merhaba, ${user.firstName}`;
+    const greetingPrefix = document.createElement("span");
+    greetingPrefix.textContent = "Merhaba,";
+    const greetingName = document.createElement("span");
+    greetingName.textContent = user.firstName;
+    greeting.append(greetingPrefix, " ", greetingName);
     const logoutButton = document.createElement("button");
     logoutButton.className = "account-logout";
     logoutButton.type = "button";
