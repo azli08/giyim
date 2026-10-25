@@ -101,6 +101,11 @@ const createProductCard = (product) => {
 };
 
 const loadCatalog = async () => {
+  const isLocalStorefront = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+  // GitHub Pages serves the static storefront only. Keep its bundled product
+  // cards available unless a separately hosted API has been configured.
+  if (!isLocalStorefront && !window.MODA_API_URL) return;
+
   const category = document.body.dataset.catalogCategory || "all";
   const url = category === "all"
     ? `${apiBaseUrl}/products`
